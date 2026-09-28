@@ -16,3 +16,5 @@ El grupo debe diseñar la plataforma que gestiona: cuentas de usuario, transfere
 - Entidad verificadora de identidad, como tercero que valida el KYC.
 - Central de riesgo o buró de crédito, como tercero que informa el historial financiero.
 
+## versions
+- 

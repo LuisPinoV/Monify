@@ -1,10 +1,15 @@
-import { Body, Controller, Get, Post, Response } from '@nestjs/common';
-import type { Response as Respuesta } from 'express';
+import { Body, Controller, Get, Post, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { ServicioUsuarios } from './servicio-usuarios';
 
 interface DatosNuevoUsuario {
   nombre: string;
   correo: string;
+  tipoUsuario: string;
+  rut: string;
+  fechaNacimiento: string;
+  rentaMensual?: number;
+  numeroCelular?: string;
 }
 
 @Controller('usuarios')
@@ -17,13 +22,20 @@ export class ControladorUsuarios {
   }
 
   @Post()
-  crear(@Body() datos: DatosNuevoUsuario, @Response() respuesta: Respuesta) {
-    if (!datos.nombre?.trim() || !datos.correo?.trim()) {
-      return respuesta.status(400).json({ mensaje: 'nombre y correo son obligatorios' });
+  crear(@Body() datos: DatosNuevoUsuario, @Res() response: Response) {
+    if (!datos.nombre?.trim() || !datos.correo?.trim() || !datos.tipoUsuario?.trim() || !datos.rut?.trim() || !datos.fechaNacimiento?.trim()) {
+      return response.status(400).json({ mensaje: 'nombre, correo, tipoUsuario, rut y fechaNacimiento son obligatorios' });
     }
 
-    return respuesta.status(201).json(
-      this.servicio.crear(datos.nombre.trim(), datos.correo.trim())
+    return response.status(201).json(
+      this.servicio.crear({
+        ...datos,
+        nombre: datos.nombre.trim(),
+        correo: datos.correo.trim(),
+        tipoUsuario: datos.tipoUsuario.trim(),
+        rut: datos.rut.trim(),
+        fechaNacimiento: datos.fechaNacimiento.trim()
+      })
     );
   }
 }

@@ -3,6 +3,8 @@ import { Controller, Get, Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ModuloBilleteras } from './modulos/billeteras/modulo-billeteras';
 import { ModuloUsuarios } from './modulos/usuarios/modulo-usuarios';
+import { ModuloOperacionesFinancieras } from './modulos/operaciones-financieras/modulo-operaciones-financieras';
+import { ModuloBaseDatos } from './modulo-base-datos';
 
 @Controller('salud')
 class ControladorSalud {
@@ -11,14 +13,14 @@ class ControladorSalud {
     return {
       servicio: 'monify',
       estado: 'activo',
-      persistencia: 'memoria temporal',
+      persistencia: 'PostgreSQL',
       autenticacion: 'pendiente'
     };
   }
 }
 
 @Module({
-  imports: [ModuloUsuarios, ModuloBilleteras],
+  imports: [ModuloBaseDatos, ModuloUsuarios, ModuloBilleteras, ModuloOperacionesFinancieras],
   controllers: [ControladorSalud]
 })
 export class ModuloPrincipal {}

@@ -6,13 +6,14 @@
   "scripts": {
     "desarrollo": "nest start --watch",
     "compilar": "nest build",
-    "iniciar": "node dist/servidor.js",
+    "iniciar": "node dist/main.js",
     "prueba": "node --test"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.11",
     "@nestjs/core": "^11.0.11",
     "@nestjs/platform-express": "^11.0.11",
+    "pg": "^8.23.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2"
   },
@@ -20,6 +21,7 @@
     "@nestjs/cli": "^11.0.5",
     "@types/express": "^5.0.6",
     "@types/node": "^22.13.4",
+    "@types/pg": "^8.23.1",
     "typescript": "^5.7.3"
   }
 }

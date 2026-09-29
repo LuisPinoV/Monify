@@ -16,5 +16,40 @@ El grupo debe diseñar la plataforma que gestiona: cuentas de usuario, transfere
 - Entidad verificadora de identidad, como tercero que valida el KYC.
 - Central de riesgo o buró de crédito, como tercero que informa el historial financiero.
 
-## versions
-- 
+## Versiones
+
+### Entorno
+
+- Ubuntu 24.04
+- Node.js 20.20.2
+- npm 10.8.2
+- PostgreSQL 16.15
+
+### Tecnologías y dependencias
+
+- NestJS 11.2.6
+- TypeScript 5.9.3
+- `pg` 8.23.0
+- Express 5.2.1, incluido por `@nestjs/platform-express`
+- RxJS 7.8.2
+- `reflect-metadata` 0.2.2
+
+### Usuarios y billeteras
+
+- `GET /usuarios`: lista usuarios.
+- `POST /usuarios`: crea un usuario con `tipoUsuario`, `nombre`, `rut`, `fechaNacimiento`, `correo` y opcionalmente `rentaMensual` y `numeroCelular`.
+- `GET /billeteras`: muestra el saldo de cada usuario desde `Usuario.Saldo`.
+- `POST /billeteras`: consulta el saldo del usuario indicado; no crea una tabla ni un registro adicional. La moneda es siempre CLP.
+
+### Operaciones financieras
+
+- `GET|POST /transacciones`: historial y registro de transacciones.
+- `GET|POST /deudas`: historial y registro de deudas.
+- `GET|POST /verificaciones-identidad`: casos de verificación de identidad.
+- `GET|POST /consultas-riesgo`: consultas y resultados de riesgo.
+- `GET|POST /creditos`: catálogo de créditos.
+- `GET|POST /solicitudes-credito`: solicitudes de crédito asociadas a un crédito.
+- `PATCH /solicitudes-credito/:id/estado`: cambia el estado de una solicitud.
+
+Los estados admitidos para solicitudes son `recibida`, `evaluacion`, `aprobada`
+y `rechazada`.

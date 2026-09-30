@@ -1,0 +1,25 @@
+services:
+  db:
+    image: postgres:16
+    container_name: monify-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres} 
+      POSTGRES_DB: ${POSTGRES_DB:-monify}
+      PGUSER: ${POSTGRES_USER:-postgres}
+      PGDATABASE: ${POSTGRES_DB:-monify}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - monify-pgdata:/var/lib/postgresql/data
+      # PostgreSQL ejecuta estos archivos, en orden, solo con un volumen nuevo.
+      - ./db/init/01-monify_schema.sql:/docker-entrypoint-initdb.d/01-monify_schema.sql:ro
+      - ./db/seed/10-seed.sql:/docker-entrypoint-initdb.d/10-seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  monify-pgdata:

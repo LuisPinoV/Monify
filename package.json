@@ -7,7 +7,13 @@
     "desarrollo": "nest start --watch",
     "compilar": "nest build",
     "iniciar": "node dist/main.js",
-    "prueba": "node --test"
+    "prueba": "node --test",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:reset": "docker compose down -v && docker compose up -d",
+    "db:seed": "docker compose exec -T db sh /docker-entrypoint-initdb.d/90-seed.sh",
+    "db:psql": "docker compose exec db psql",
+    "db:logs": "docker compose logs -f db"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.11",

@@ -53,3 +53,10 @@ El grupo debe diseñar la plataforma que gestiona: cuentas de usuario, transfere
 
 Los estados admitidos para solicitudes son `recibida`, `evaluacion`, `aprobada`
 y `rechazada`.
+
+### Panel web
+
+El panel de resumen está disponible en la ruta raíz del servidor. Inicia la API
+con `npm run desarrollo` y abre `http://localhost:3000`. El panel consulta los
+usuarios, billeteras, transacciones y deudas existentes; Bootstrap y las fuentes
+se cargan desde CDN.

@@ -1,6 +1,8 @@
 import 'reflect-metadata';
+import { join } from 'node:path';
 import { Controller, Get, Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ModuloBilleteras } from './modulos/billeteras/modulo-billeteras';
 import { ModuloUsuarios } from './modulos/usuarios/modulo-usuarios';
 import { ModuloOperacionesFinancieras } from './modulos/operaciones-financieras/modulo-operaciones-financieras';
@@ -26,7 +28,8 @@ class ControladorSalud {
 export class ModuloPrincipal {}
 
 export async function iniciar(): Promise<void> {
-  const aplicacion = await NestFactory.create(ModuloPrincipal);
+  const aplicacion = await NestFactory.create<NestExpressApplication>(ModuloPrincipal);
+  aplicacion.useStaticAssets(join(process.cwd(), 'public'));
   const puerto = Number(process.env.PUERTO ?? 3000);
   await aplicacion.listen(puerto);
 }

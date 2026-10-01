@@ -22,7 +22,7 @@ El grupo debe diseñar la plataforma que gestiona: cuentas de usuario, transfere
 
 - Ubuntu 24.04
 - Node.js 20.20.2
-- npm 10.8.2
+- pnpm 10.8.2
 - PostgreSQL 16.15
 
 ### Tecnologías y dependencias
@@ -43,28 +43,28 @@ atajos definidos en `package.json`:
 ```bash
 cp .env.example .env
 # Edita .env y reemplaza change-me por una contraseña local.
-npm install
-npm run db:up
-DATABASE_URL="$(grep '^DATABASE_URL=' .env | cut -d= -f2-)" npm run desarrollo
+pnpm install
+pnpm run db:up
+DATABASE_URL="$(grep '^DATABASE_URL=' .env | cut -d= -f2-)" pnpm run desarrollo
 ```
 
 ### Comandos disponibles
 
 | Comando | Descripción |
 | --- | --- |
-| `npm run db:up` | Levanta PostgreSQL en segundo plano. En un volumen nuevo carga el schema y los datos iniciales. |
-| `npm run db:down` | Detiene el contenedor y conserva el volumen de datos. |
-| `npm run db:reset` | Elimina el volumen y recrea la base desde cero. |
-| `npm run db:seed` | Ejecuta el cargador de datos iniciales dentro del contenedor. |
-| `npm run db:recrear-cifrados` | Borra todos los registros y los recrea usando la `ENCRYPTION_KEY` y el par `RSA_PUBLIC_KEY`/`RSA_PRIVATE_KEY` actuales. |
-| `npm run db:psql` | Abre una consola `psql` dentro del contenedor. |
-| `npm run db:logs` | Muestra los logs de PostgreSQL en tiempo real. |
+| `pnpm run db:up` | Levanta PostgreSQL en segundo plano. En un volumen nuevo carga el schema y los datos iniciales. |
+| `pnpm run db:down` | Detiene el contenedor y conserva el volumen de datos. |
+| `pnpm run db:reset` | Elimina el volumen y recrea la base desde cero. |
+| `pnpm run db:seed` | Ejecuta el cargador de datos iniciales dentro del contenedor. |
+| `pnpm run db:recrear-cifrados` | Borra todos los registros y los recrea usando la `ENCRYPTION_KEY` actual. |
+| `pnpm run db:psql` | Abre una consola `psql` dentro del contenedor. |
+| `pnpm run db:logs` | Muestra los logs de PostgreSQL en tiempo real. |
 
 Para comprobar que el contenedor está funcionando:
 
 ```bash
 docker compose ps
-npm run db:logs
+pnpm run db:logs
 ```
 
 PostgreSQL solo ejecuta automáticamente los archivos de inicialización cuando
@@ -72,7 +72,7 @@ el volumen está vacío. Si modificas el schema o necesitas una carga limpia,
 usa:
 
 ```bash
-npm run db:reset
+pnpm run db:reset
 ```
 
 El servicio publica PostgreSQL en `localhost:5433` por defecto para no interferir
@@ -88,11 +88,11 @@ levantar Compose, por ejemplo:
 
 ```bash
 DB_PORT=5433 POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres \
-POSTGRES_DB=monify npm run db:up
+POSTGRES_DB=monify pnpm run db:up
 ```
 
 El archivo `db/seed/10-seed.sql` queda disponible para datos iniciales adicionales.
-Para datos de desarrollo protegidos con AES-256-GCM usa `npm run db:recrear-cifrados`;
+Para datos de desarrollo protegidos con AES-256-GCM usa `pnpm run db:recrear-cifrados`;
 no uses `db:seed` para este propósito, porque los inserts SQL directos no pasan por
 el servicio de cifrado de NestJS.
 
@@ -171,6 +171,6 @@ un proceso de migración que cifre los registros existentes antes de usarlos.
 ### Panel web
 
 El panel de resumen está disponible en la ruta raíz del servidor. Inicia la API
-con `npm run desarrollo` y abre `http://localhost:3000`. El panel consulta los
+con `pnpm run desarrollo` y abre `http://localhost:3000`. El panel consulta los
 usuarios, billeteras, transacciones y deudas existentes; Bootstrap y las fuentes
 se cargan desde CDN.

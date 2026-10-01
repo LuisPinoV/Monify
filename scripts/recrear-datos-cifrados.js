@@ -1,12 +1,14 @@
-const { createCipheriv, randomBytes } = require('node:crypto');
+const { createCipheriv, randomBytes, publicEncrypt } = require('node:crypto');
 const { readFile } = require('node:fs/promises');
 const { Pool } = require('pg');
 
 const databaseUrl = process.env.DATABASE_URL;
 const encryptionKey = Buffer.from(process.env.ENCRYPTION_KEY || '', 'base64');
+const clavePublica = (process.env.RSA_PUBLIC_KEY || '').replace(/\\n/g, '\n');
 
 if (!databaseUrl) throw new Error('DATABASE_URL es obligatoria');
 if (encryptionKey.length !== 32) throw new Error('ENCRYPTION_KEY debe ser base64 de 32 bytes');
+if (!clavePublica) throw new Error('RSA_PUBLIC_KEY es obligatoria');
 
 function encryptPacked(value) {
   const iv = randomBytes(12);
@@ -15,7 +17,12 @@ function encryptPacked(value) {
   return `v1.${iv.toString('base64')}.${cipher.getAuthTag().toString('base64')}.${ciphertext.toString('base64')}`;
 }
 
-async function cifrarColumnas(client, tabla, columnas) {
+function encryptPackedAsimetrico(value) {
+  const ciphertext = publicEncrypt({ key: clavePublica, oaepHash: 'sha256' }, Buffer.from(String(value), 'utf8'));
+  return `va1.${ciphertext.toString('base64')}`;
+}
+
+async function cifrarColumnas(client, tabla, columnas, cifrar = encryptPacked) {
   const seleccion = columnas.map((columna) => `"${columna}"`).join(', ');
   const filas = await client.query(`SELECT * FROM "${tabla}"`);
   for (const fila of filas.rows) {
@@ -24,8 +31,8 @@ async function cifrarColumnas(client, tabla, columnas) {
     const condiciones = [];
     for (const columna of columnas) {
       const valor = fila[columna];
-      if (valor !== null && valor !== undefined && !String(valor).startsWith('v1.')) {
-        parametros.push(encryptPacked(valor));
+      if (valor !== null && valor !== undefined && !String(valor).startsWith('v1.') && !String(valor).startsWith('va1.')) {
+        parametros.push(cifrar(valor));
         cambios[columna] = `$${parametros.length}`;
       }
     }
@@ -52,11 +59,11 @@ async function main() {
     await client.query('BEGIN');
     await cifrarColumnas(client, 'Usuario', ['nombreCompleto', 'fechaNacimiento', 'Saldo', 'rentaMensual', 'numeroCelular']);
     await cifrarColumnas(client, 'VerificadorDeIdentidad', ['fechaVerificacion', 'fechaExpiracion', 'metodoDeVerificacion']);
-    await cifrarColumnas(client, 'ConsultaDeRiesgo', ['ScoreDeRiesgo', 'morosidad', 'tiempoDeMorosidad', 'cantidadDeuda', 'tiempoEnDeuda']);
+    await cifrarColumnas(client, 'ConsultaDeRiesgo', ['ScoreDeRiesgo', 'morosidad', 'tiempoDeMorosidad', 'cantidadDeuda', 'tiempoEnDeuda'], encryptPackedAsimetrico);
     await cifrarColumnas(client, 'Transaccion', ['montoTransaccion']);
-    await cifrarColumnas(client, 'Deuda', ['montoDeuda']);
-    await cifrarColumnas(client, 'Credito', ['montoCredito', 'tasaInteres']);
-    await cifrarColumnas(client, 'UsuarioCredito', ['cuota', 'montoAcumulado', 'montoFinal']);
+    await cifrarColumnas(client, 'Deuda', ['montoDeuda'], encryptPackedAsimetrico);
+    await cifrarColumnas(client, 'Credito', ['montoCredito', 'tasaInteres'], encryptPackedAsimetrico);
+    await cifrarColumnas(client, 'UsuarioCredito', ['cuota', 'montoAcumulado', 'montoFinal'], encryptPackedAsimetrico);
     await client.query('COMMIT');
     console.log('Datos generados desde db/seed/10-seed.sql y cifrados en sus columnas originales.');
   } catch (error) {

@@ -56,7 +56,7 @@ DATABASE_URL="$(grep '^DATABASE_URL=' .env | cut -d= -f2-)" npm run desarrollo
 | `npm run db:down` | Detiene el contenedor y conserva el volumen de datos. |
 | `npm run db:reset` | Elimina el volumen y recrea la base desde cero. |
 | `npm run db:seed` | Ejecuta el cargador de datos iniciales dentro del contenedor. |
-| `npm run db:recrear-cifrados` | Borra todos los registros y los recrea usando la `ENCRYPTION_KEY` actual. |
+| `npm run db:recrear-cifrados` | Borra todos los registros y los recrea usando la `ENCRYPTION_KEY` y el par `RSA_PUBLIC_KEY`/`RSA_PRIVATE_KEY` actuales. |
 | `npm run db:psql` | Abre una consola `psql` dentro del contenedor. |
 | `npm run db:logs` | Muestra los logs de PostgreSQL en tiempo real. |
 
@@ -119,20 +119,23 @@ y `rechazada`.
 ## Protección de datos
 
 El módulo global `src/seguridad` contiene `ServicioCifrado`, que usa
-AES-256-GCM con una clave base64 de 32 bytes tomada de `ENCRYPTION_KEY`, y
-`ServicioHash`, que usa bcrypt con 12 rondas. Los datos personales y financieros
-se protegen en la capa de persistencia campo por campo mediante `camposCifrados`
-(cada propiedad contiene su propio `ciphertext`, `iv` y `authTag`); los
-controladores no realizan cifrado directamente. Las columnas
+AES-256-GCM con una clave base64 de 32 bytes tomada de `ENCRYPTION_KEY` para
+cifrado simétrico y RSA-OAEP con el par `RSA_PUBLIC_KEY`/`RSA_PRIVATE_KEY` para
+cifrado asimétrico, y `ServicioHash`, que usa bcrypt con 12 rondas. Los datos
+personales y financieros se protegen en la capa de persistencia campo por campo
+mediante `camposCifrados` (cada propiedad contiene su propio `ciphertext`, `iv`
+y `authTag` para los campos simétricos, o un `ciphertext` RSA para los
+asimétricos); los controladores no realizan cifrado directamente. Las columnas
 `datosCifrados`, `datosCifradosIv` y `datosCifradosAuthTag` se conservan solo
 para leer registros antiguos.
 
 | Campo | Técnica | Justificación | Algoritmo | Dónde se protege |
 | --- | --- | --- | --- | --- |
-| Nombre, fecha de nacimiento, saldo, renta y celular | Cifrado | Se necesitan recuperar para mostrar o calcular | AES-256-GCM | Servicio de usuarios |
-| Montos de transacciones, deudas, créditos y solicitudes | Cifrado | Se necesitan recuperar para mostrar y operar | AES-256-GCM | Servicio financiero |
-| Score, morosidad y datos de riesgo | Cifrado | Se usan en consultas y evaluación | AES-256-GCM | Servicio financiero |
-| RUT y correo | Sin cifrado reversible | Tienen `UNIQUE` y se usan para identificación/búsqueda; AES-GCM estándar no permite esas operaciones | N/A | Columnas indexadas de PostgreSQL |
+| Nombre, fecha de nacimiento, saldo, renta y celular | Cifrado simétrico | Se necesitan recuperar para mostrar o calcular | AES-256-GCM | Servicio de usuarios |
+| Montos de transacciones | Cifrado simétrico | Se necesitan recuperar para mostrar y operar | AES-256-GCM | Servicio financiero |
+| Montos de deudas, créditos y solicitudes | Cifrado asimétrico | Información crediticia sensible que puede usarse para chantaje o estafas de cobranza | RSA-OAEP | Servicio financiero |
+| Score, morosidad y datos de riesgo | Cifrado asimétrico | Información crediticia sensible usada para perfilamiento | RSA-OAEP | Servicio financiero |
+| RUT y correo | Sin cifrado reversible | Tienen `UNIQUE` y se usan para identificación/búsqueda; el cifrado estándar no permite esas operaciones | N/A | Columnas indexadas de PostgreSQL |
 | Contraseñas | Hash | Nunca deben recuperarse | bcrypt, 12 rounds | `ServicioHash`; autenticación pendiente |
 | IDs, estados y fechas de sistema | Sin cifrado | Son referencias, filtros o metadatos operativos | N/A | Columnas normales |
 
@@ -147,6 +150,16 @@ openssl rand -base64 32
 ```
 
 Guárdala únicamente en `.env` como `ENCRYPTION_KEY`; no la versiones ni la
+imprimas en logs. Genera también el par RSA para los campos de cifrado
+asimétrico con:
+
+```bash
+openssl genrsa -out rsa_private.pem 2048
+openssl rsa -in rsa_private.pem -pubout -out rsa_public.pem
+```
+
+Guarda su contenido PEM en `.env` como `RSA_PRIVATE_KEY` y `RSA_PUBLIC_KEY`
+(con los saltos de línea escapados como `\n`); tampoco los versiones ni los
 imprimas en logs. El seed SQL conserva su función de simulación, pero los
 registros creados directamente por SQL no pasan por `ServicioCifrado`; para
 datos simulados protegidos, créalos mediante los endpoints de la API o ejecuta

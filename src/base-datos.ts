@@ -1,5 +1,5 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Pool, type QueryResult, type QueryResultRow } from 'pg';
 
@@ -11,7 +11,12 @@ export class BaseDatos implements OnModuleInit, OnModuleDestroy {
   });
 
   async onModuleInit(): Promise<void> {
-    const esquema = await readFile(resolve(process.cwd(), 'monify_schema.sql'), 'utf8');
+    const rutasEsquema = [
+      resolve(process.cwd(), 'db/init/01-monify_schema.sql'),
+      resolve(process.cwd(), 'monify_schema.sql')
+    ];
+    const rutaEsquema = await this.encontrarEsquema(rutasEsquema);
+    const esquema = await readFile(rutaEsquema, 'utf8');
     await this.pool.query(esquema);
   }
 
@@ -21,5 +26,17 @@ export class BaseDatos implements OnModuleInit, OnModuleDestroy {
 
   consultar<T extends QueryResultRow>(texto: string, parametros: unknown[] = []): Promise<QueryResult<T>> {
     return this.pool.query<T>(texto, parametros);
+  }
+
+  private async encontrarEsquema(rutas: string[]): Promise<string> {
+    for (const ruta of rutas) {
+      try {
+        await access(ruta);
+        return ruta;
+      } catch {
+        continue;
+      }
+    }
+    throw new Error('No se encontró el esquema SQL en db/init/01-monify_schema.sql');
   }
 }

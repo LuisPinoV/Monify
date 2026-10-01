@@ -3,13 +3,13 @@ services:
     image: postgres:16
     container_name: monify-postgres
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres} 
-      POSTGRES_DB: ${POSTGRES_DB:-monify}
-      PGUSER: ${POSTGRES_USER:-postgres}
-      PGDATABASE: ${POSTGRES_DB:-monify}
+      POSTGRES_USER: ${POSTGRES_USER:?Define POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?Define POSTGRES_DB in .env}
+      PGUSER: ${POSTGRES_USER:?Define POSTGRES_USER in .env}
+      PGDATABASE: ${POSTGRES_DB:?Define POSTGRES_DB in .env}
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "${DB_PORT:-5433}:5432"
     volumes:
       - monify-pgdata:/var/lib/postgresql/data
       # PostgreSQL ejecuta estos archivos, en orden, solo con un volumen nuevo.

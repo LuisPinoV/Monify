@@ -41,8 +41,11 @@ localmente. Instala las dependencias desde la raíz del proyecto y luego usa los
 atajos definidos en `package.json`:
 
 ```bash
+cp .env.example .env
+# Edita .env y reemplaza change-me por una contraseña local.
 npm install
 npm run db:up
+DATABASE_URL="$(grep '^DATABASE_URL=' .env | cut -d= -f2-)" npm run desarrollo
 ```
 
 ### Comandos disponibles
@@ -53,6 +56,7 @@ npm run db:up
 | `npm run db:down` | Detiene el contenedor y conserva el volumen de datos. |
 | `npm run db:reset` | Elimina el volumen y recrea la base desde cero. |
 | `npm run db:seed` | Ejecuta el cargador de datos iniciales dentro del contenedor. |
+| `npm run db:recrear-cifrados` | Borra todos los registros y los recrea usando la `ENCRYPTION_KEY` actual. |
 | `npm run db:psql` | Abre una consola `psql` dentro del contenedor. |
 | `npm run db:logs` | Muestra los logs de PostgreSQL en tiempo real. |
 
@@ -71,11 +75,12 @@ usa:
 npm run db:reset
 ```
 
-El servicio publica PostgreSQL en `localhost:5432` por defecto. La aplicación
-puede conectarse con:
+El servicio publica PostgreSQL en `localhost:5433` por defecto para no interferir
+con una instalación local en `localhost:5432`. La aplicación se conecta usando
+`DATABASE_URL`:
 
 ```text
-postgresql://postgres:postgres@localhost:5432/monify
+postgresql://postgres:tu_clave@localhost:5433/monify
 ```
 
 Puedes cambiar el puerto y las credenciales mediante variables de entorno al
@@ -86,8 +91,10 @@ DB_PORT=5433 POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres \
 POSTGRES_DB=monify npm run db:up
 ```
 
-Las cantidades de datos de prueba se configuran en la instrucción
-`INSERT INTO seed_config` del archivo `db/seed/10-seed.sql`.
+El archivo `db/seed/10-seed.sql` queda disponible para datos iniciales adicionales.
+Para datos de desarrollo protegidos con AES-256-GCM usa `npm run db:recrear-cifrados`;
+no uses `db:seed` para este propósito, porque los inserts SQL directos no pasan por
+el servicio de cifrado de NestJS.
 
 ### Usuarios y billeteras
 
@@ -108,6 +115,42 @@ Las cantidades de datos de prueba se configuran en la instrucción
 
 Los estados admitidos para solicitudes son `recibida`, `evaluacion`, `aprobada`
 y `rechazada`.
+
+## Protección de datos
+
+El módulo global `src/seguridad` contiene `ServicioCifrado`, que usa
+AES-256-GCM con una clave base64 de 32 bytes tomada de `ENCRYPTION_KEY`, y
+`ServicioHash`, que usa bcrypt con 12 rondas. Los datos personales y financieros
+se protegen en la capa de persistencia campo por campo mediante `camposCifrados`
+(cada propiedad contiene su propio `ciphertext`, `iv` y `authTag`); los
+controladores no realizan cifrado directamente. Las columnas
+`datosCifrados`, `datosCifradosIv` y `datosCifradosAuthTag` se conservan solo
+para leer registros antiguos.
+
+| Campo | Técnica | Justificación | Algoritmo | Dónde se protege |
+| --- | --- | --- | --- | --- |
+| Nombre, fecha de nacimiento, saldo, renta y celular | Cifrado | Se necesitan recuperar para mostrar o calcular | AES-256-GCM | Servicio de usuarios |
+| Montos de transacciones, deudas, créditos y solicitudes | Cifrado | Se necesitan recuperar para mostrar y operar | AES-256-GCM | Servicio financiero |
+| Score, morosidad y datos de riesgo | Cifrado | Se usan en consultas y evaluación | AES-256-GCM | Servicio financiero |
+| RUT y correo | Sin cifrado reversible | Tienen `UNIQUE` y se usan para identificación/búsqueda; AES-GCM estándar no permite esas operaciones | N/A | Columnas indexadas de PostgreSQL |
+| Contraseñas | Hash | Nunca deben recuperarse | bcrypt, 12 rounds | `ServicioHash`; autenticación pendiente |
+| IDs, estados y fechas de sistema | Sin cifrado | Son referencias, filtros o metadatos operativos | N/A | Columnas normales |
+
+No se implementó JWT porque todavía no existe autenticación ni un flujo de
+tokens en este proyecto. Cuando se agregue, debe usar `@nestjs/jwt` y no incluir
+datos sensibles directamente en el payload.
+
+Genera una clave para desarrollo con:
+
+```bash
+openssl rand -base64 32
+```
+
+Guárdala únicamente en `.env` como `ENCRYPTION_KEY`; no la versiones ni la
+imprimas en logs. El seed SQL conserva su función de simulación, pero los
+registros creados directamente por SQL no pasan por `ServicioCifrado`; para
+datos simulados protegidos, créalos mediante los endpoints de la API o ejecuta
+un proceso de migración que cifre los registros existentes antes de usarlos.
 
 -----
 

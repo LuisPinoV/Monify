@@ -46,46 +46,52 @@ export class ControladorOperacionesFinancieras {
 
   @Get('transacciones') listarTransacciones() { return this.servicio.listarTransacciones(); }
 
-  @Post('transacciones') crearTransaccion(@Body() datos: DatosMonto, @Res() response: Response) {
+  @Post('transacciones') async crearTransaccion(@Body() datos: DatosMonto, @Res() response: Response) {
     const error = this.validarMonto(datos);
     if (error) return response.status(400).json({ mensaje: error });
-    return response.status(201).json(this.servicio.crearTransaccion(datos.usuarioId.trim(), datos.monto));
+    const transaccion = await this.servicio.crearTransaccion(datos.usuarioId.trim(), datos.monto);
+    return response.status(201).json(transaccion);
   }
 
   @Get('deudas') listarDeudas() { return this.servicio.listarDeudas(); }
 
-  @Post('deudas') crearDeuda(@Body() datos: DatosMonto, @Res() response: Response) {
+  @Post('deudas') async crearDeuda(@Body() datos: DatosMonto, @Res() response: Response) {
     const error = this.validarMonto(datos);
     if (error) return response.status(400).json({ mensaje: error });
-    return response.status(201).json(this.servicio.crearDeuda(datos.usuarioId.trim(), datos.monto));
+    const deuda = await this.servicio.crearDeuda(datos.usuarioId.trim(), datos.monto);
+    return response.status(201).json(deuda);
   }
 
   @Get('verificaciones-identidad') listarVerificaciones() { return this.servicio.listarVerificaciones(); }
 
-  @Post('verificaciones-identidad') crearVerificacion(@Body() datos: DatosVerificacion, @Res() response: Response) {
+  @Post('verificaciones-identidad') async crearVerificacion(@Body() datos: DatosVerificacion, @Res() response: Response) {
     if (!datos.usuarioId?.trim() || !datos.estado) return response.status(400).json({ mensaje: 'usuarioId y estado son obligatorios' });
-    return response.status(201).json(this.servicio.crearVerificacion({ ...datos, usuarioId: datos.usuarioId.trim() }));
+    const verificacion = await this.servicio.crearVerificacion({ ...datos, usuarioId: datos.usuarioId.trim() });
+    return response.status(201).json(verificacion);
   }
 
   @Get('consultas-riesgo') listarConsultasRiesgo() { return this.servicio.listarConsultasRiesgo(); }
 
-  @Post('consultas-riesgo') crearConsultaRiesgo(@Body() datos: DatosConsultaRiesgo, @Res() response: Response) {
+  @Post('consultas-riesgo') async crearConsultaRiesgo(@Body() datos: DatosConsultaRiesgo, @Res() response: Response) {
     if (!datos.usuarioId?.trim() || typeof datos.morosidad !== 'boolean') return response.status(400).json({ mensaje: 'usuarioId y morosidad son obligatorios' });
-    return response.status(201).json(this.servicio.crearConsultaRiesgo({ ...datos, usuarioId: datos.usuarioId.trim() }));
+    const consulta = await this.servicio.crearConsultaRiesgo({ ...datos, usuarioId: datos.usuarioId.trim() });
+    return response.status(201).json(consulta);
   }
 
   @Get('creditos') listarCreditos() { return this.servicio.listarCreditos(); }
 
-  @Post('creditos') crearCredito(@Body() datos: DatosCredito, @Res() response: Response) {
+  @Post('creditos') async crearCredito(@Body() datos: DatosCredito, @Res() response: Response) {
     if (!this.esNumeroPositivo(datos.monto) || !this.esNumeroNoNegativo(datos.tasaInteres)) return response.status(400).json({ mensaje: 'monto y tasaInteres deben ser números válidos' });
-    return response.status(201).json(this.servicio.crearCredito(datos.monto, datos.tasaInteres));
+    const credito = await this.servicio.crearCredito(datos.monto, datos.tasaInteres);
+    return response.status(201).json(credito);
   }
 
   @Get('solicitudes-credito') listarSolicitudes() { return this.servicio.listarSolicitudes(); }
 
-  @Post('solicitudes-credito') crearSolicitud(@Body() datos: DatosSolicitud, @Res() response: Response) {
+  @Post('solicitudes-credito') async crearSolicitud(@Body() datos: DatosSolicitud, @Res() response: Response) {
     if (!datos.usuarioId?.trim() || !datos.creditoId?.trim() || !this.esNumeroPositivo(datos.montoSolicitado)) return response.status(400).json({ mensaje: 'usuarioId, creditoId y montoSolicitado son obligatorios' });
-    return response.status(201).json(this.servicio.crearSolicitud(datos.usuarioId.trim(), datos.creditoId.trim(), datos.montoSolicitado));
+    const solicitud = await this.servicio.crearSolicitud(datos.usuarioId.trim(), datos.creditoId.trim(), datos.montoSolicitado);
+    return response.status(201).json(solicitud);
   }
 
   @Patch('solicitudes-credito/:id/estado') actualizarEstado(@Param('id') id: string, @Body() datos: DatosEstado) {

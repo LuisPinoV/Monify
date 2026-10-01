@@ -12,6 +12,17 @@
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
+    <div class="login-screen" id="login-screen">
+      <form class="login-card" id="login-form">
+        <span class="brand-mark">m</span>
+        <h1>Iniciar sesión</h1>
+        <p>Accede al panel de Monify.</p>
+        <div class="form-error d-none"></div>
+        <label class="field"><span>Correo</span><input type="email" name="correo" required autocomplete="email"></label>
+        <label class="field"><span>Contraseña</span><input type="password" name="contrasena" required autocomplete="current-password"></label>
+        <button class="btn btn-primary" type="submit">Entrar</button>
+      </form>
+    </div>
     <div class="app-shell">
       <aside class="sidebar">
         <a class="brand" href="#/resumen" aria-label="Monify, inicio">
@@ -30,8 +41,6 @@
         </nav>
 
         <div class="sidebar-bottom">
-          <div class="environment-label">ESTADO DEL SERVICIO</div>
-          <div class="service-state"><span class="status-dot" id="service-dot"></span><span id="service-status">Conectando...</span></div>
           <div class="sidebar-footer">Monify <span>·</span> Panel de gestión</div>
         </div>
       </aside>
@@ -125,6 +134,7 @@
                 <label class="field"><span>RUT</span><input type="text" name="rut" placeholder="12.345.678-9" required></label>
                 <label class="field"><span>Fecha de nacimiento</span><input type="date" name="fechaNacimiento" required></label>
                 <label class="field"><span>Tipo de usuario</span><input type="text" name="tipoUsuario" value="usuario" required></label>
+                <label class="field"><span>Contraseña (mínimo 8 caracteres)</span><input type="password" name="contrasena" minlength="8" required autocomplete="new-password"></label>
                 <label class="field"><span>Renta mensual (opcional)</span><input type="number" name="rentaMensual" min="0" step="1"></label>
                 <label class="field"><span>Celular (opcional)</span><input type="text" name="numeroCelular"></label>
                 <button class="btn btn-primary" type="submit">Crear usuario</button>

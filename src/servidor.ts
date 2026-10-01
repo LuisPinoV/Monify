@@ -1,16 +1,21 @@
 import 'reflect-metadata';
 import { join } from 'node:path';
 import { Controller, Get, Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ModuloBilleteras } from './modulos/billeteras/modulo-billeteras';
 import { ModuloUsuarios } from './modulos/usuarios/modulo-usuarios';
 import { ModuloOperacionesFinancieras } from './modulos/operaciones-financieras/modulo-operaciones-financieras';
 import { ModuloBaseDatos } from './modulo-base-datos';
+import { ModuloSeguridad } from './seguridad/modulo-seguridad';
+import { ModuloAutenticacion } from './modulos/autenticacion/modulo-autenticacion';
+import { Publica } from './modulos/autenticacion/publico.decorador';
 
 @Controller('salud')
 class ControladorSalud {
   @Get()
+  @Publica()
   consultar() {
     return {
       servicio: 'monify',
@@ -22,7 +27,15 @@ class ControladorSalud {
 }
 
 @Module({
-  imports: [ModuloBaseDatos, ModuloUsuarios, ModuloBilleteras, ModuloOperacionesFinancieras],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    ModuloSeguridad,
+    ModuloAutenticacion,
+    ModuloBaseDatos,
+    ModuloUsuarios,
+    ModuloBilleteras,
+    ModuloOperacionesFinancieras
+  ],
   controllers: [ControladorSalud]
 })
 export class ModuloPrincipal {}

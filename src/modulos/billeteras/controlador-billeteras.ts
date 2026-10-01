@@ -16,11 +16,12 @@ export class ControladorBilleteras {
   }
 
   @Post()
-  crear(@Body() datos: DatosNuevaBilletera, @Res() response: Response) {
+  async crear(@Body() datos: DatosNuevaBilletera, @Res() response: Response) {
     if (!datos.usuarioId?.trim()) {
       return response.status(400).json({ mensaje: 'usuarioId es obligatorio' });
     }
 
-    return response.status(201).json(this.servicio.crear(datos.usuarioId.trim()));
+    const billetera = await this.servicio.crear(datos.usuarioId.trim());
+    return response.status(201).json(billetera);
   }
 }

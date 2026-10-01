@@ -12,7 +12,7 @@ const formatDate = (value) => {
   }).format(date);
 };
 
-const initials = (name = '') => name.trim().split(/\s+/).slice(0, 2).map((part) => part[0] || '').join('').toUpperCase() || '?';
+const initials = (name = '') => String(name || '').trim().split(/\s+/).slice(0, 2).map((part) => part[0] || '').join('').toUpperCase() || '?';
 
 const estadoVerificacionLabels = { pendiente: 'Pendiente', en_revision: 'En revisión', verificada: 'Verificada', rechazada: 'Rechazada' };
 const estadoSolicitudLabels = { recibida: 'Recibida', en_evaluacion: 'En evaluación', aprobada: 'Aprobada', rechazada: 'Rechazada' };
@@ -31,11 +31,11 @@ function emptyRow(colspan, message = 'Todavía no hay registros.') {
 
 function userName(id) {
   const user = state.users.find((candidate) => String(candidate.id) === String(id));
-  return user ? user.nombre : `Usuario #${id}`;
+  return user?.nombre || `Usuario #${id}`;
 }
 
 async function getData(path) {
-  const response = await fetch(path, { headers: { Accept: 'application/json' } });
+  const response = await fetch(path, { headers: { Accept: 'application/json', ...authHeaders() } });
   if (!response.ok) throw new Error(`${path}: ${response.status}`);
   return response.json();
 }
@@ -43,12 +43,48 @@ async function getData(path) {
 async function sendData(method, path, body) {
   const response = await fetch(path, {
     method,
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...authHeaders() },
     body: JSON.stringify(body)
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.mensaje || `${path}: ${response.status}`);
   return payload;
+}
+
+function authHeaders() {
+  const token = sessionStorage.getItem('monify.accessToken');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function mostrarAplicacion() {
+  document.querySelector('#login-screen').classList.add('d-none');
+  document.querySelector('.app-shell').classList.remove('d-none');
+}
+
+function mostrarLogin() {
+  document.querySelector('#login-screen').classList.remove('d-none');
+  document.querySelector('.app-shell').classList.add('d-none');
+}
+
+async function iniciarSesion(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const error = form.querySelector('.form-error');
+  try {
+    const response = await fetch('/auth/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.fromEntries(new FormData(form)))
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.message || payload.mensaje || 'No se pudo iniciar sesión');
+    sessionStorage.setItem('monify.accessToken', payload.accessToken);
+    error.classList.add('d-none');
+    mostrarAplicacion();
+    navigate();
+  } catch (requestError) {
+    error.textContent = requestError.message;
+    error.classList.remove('d-none');
+  }
 }
 
 const postData = (path, body) => sendData('POST', path, body);
@@ -95,9 +131,10 @@ function renderUsers(users, wallets) {
     ? recentUsers.map((user, index) => {
       const wallet = walletByUser.get(String(user.id));
       const balance = wallet ? formatCurrency(wallet.saldo) : formatCurrency(user.saldo);
+      const name = user.nombre || `Usuario #${user.id}`;
       return `<div class="user-row">
-        <span class="avatar avatar-${index % 4}">${escapeHtml(initials(user.nombre))}</span>
-        <div class="user-details"><strong>${escapeHtml(user.nombre)}</strong><span>${escapeHtml(user.correo || user.tipoUsuario || 'Usuario')}</span></div>
+        <span class="avatar avatar-${index % 4}">${escapeHtml(initials(name))}</span>
+        <div class="user-details"><strong>${escapeHtml(name)}</strong><span>${escapeHtml(user.correo || user.tipoUsuario || 'Usuario')}</span></div>
         <span class="user-balance">${balance}</span>
       </div>`;
     }).join('')
@@ -164,7 +201,7 @@ async function loadUsuarios() {
   document.querySelector('#usuarios-list').innerHTML = users.length
     ? users.map((user, index) => `
       <tr>
-        <td><div class="user-cell"><span class="avatar avatar-${index % 4}">${escapeHtml(initials(user.nombre))}</span><div class="user-details"><strong>${escapeHtml(user.nombre)}</strong><span>${escapeHtml(user.correo)}</span></div></div></td>
+        <td><div class="user-cell"><span class="avatar avatar-${index % 4}">${escapeHtml(initials(user.nombre || `Usuario #${user.id}`))}</span><div class="user-details"><strong>${escapeHtml(user.nombre || `Usuario #${user.id}`)}</strong><span>${escapeHtml(user.correo || 'Sin correo')}</span></div></div></td>
         <td>${escapeHtml(user.rut)}</td>
         <td>${escapeHtml(user.tipoUsuario)}</td>
         <td class="activity-date">${formatDate(user.fechaNacimiento)}</td>
@@ -330,7 +367,8 @@ function initForms() {
   bindForm(document.querySelector('#usuario-form'), async (data) => {
     const payload = {
       nombre: data.get('nombre'), correo: data.get('correo'), rut: data.get('rut'),
-      fechaNacimiento: data.get('fechaNacimiento'), tipoUsuario: data.get('tipoUsuario')
+      fechaNacimiento: data.get('fechaNacimiento'), tipoUsuario: data.get('tipoUsuario'),
+      contrasena: data.get('contrasena')
     };
     const renta = data.get('rentaMensual');
     if (renta) payload.rentaMensual = Number(renta);
@@ -414,8 +452,14 @@ function initForms() {
 document.querySelector('#today-date').textContent = new Intl.DateTimeFormat('es-CL', {
   weekday: 'long', day: 'numeric', month: 'long'
 }).format(new Date());
+document.querySelector('#login-form').addEventListener('submit', iniciarSesion);
 initTabs();
 initForms();
 window.addEventListener('hashchange', navigate);
 document.querySelector('#refresh-button').addEventListener('click', navigate);
-navigate();
+if (sessionStorage.getItem('monify.accessToken')) {
+  mostrarAplicacion();
+  navigate();
+} else {
+  mostrarLogin();
+}

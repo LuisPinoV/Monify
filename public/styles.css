@@ -1,3 +1,28 @@
+ .login-screen {
+  align-items: center;
+  background: #f4f6f2;
+  display: flex;
+  min-height: 100vh;
+  justify-content: center;
+  padding: 24px;
+}
+
+.login-card {
+  background: #ffffff;
+  border: 1px solid #dfe5dc;
+  border-radius: 8px;
+  box-shadow: 0 18px 50px rgba(27, 45, 34, 0.12);
+  display: grid;
+  gap: 16px;
+  max-width: 420px;
+  padding: 36px;
+  width: 100%;
+}
+
+.login-card h1,
+.login-card p {
+  margin: 0;
+}
 :root {
   color-scheme: light;
   --ink: #202c29;

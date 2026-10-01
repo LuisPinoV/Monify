@@ -40,13 +40,6 @@ export interface Transferencia {
   creadaEn: string;
 }
 
-export interface CasoVerificacion {
-  id: Identificador;
-  usuarioId: Identificador;
-  estado: EstadoVerificacion;
-  creadoEn: string;
-}
-
 export interface SolicitudCredito {
   id: Identificador;
   usuarioId: Identificador;

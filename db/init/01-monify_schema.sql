@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS "Usuario" (
     "idTipoUsuario"   INTEGER NOT NULL
         REFERENCES "TipoUsuario"("idTipoUsuario") ON DELETE RESTRICT,
     "nombreCompleto"  TEXT NOT NULL,
-    "rut"             VARCHAR(20)  NOT NULL UNIQUE,
+    "rut"             TEXT NOT NULL,
+    "rutHash"         TEXT,
     "fechaNacimiento" TEXT         NOT NULL,
     "Saldo"           TEXT NOT NULL,
     "rentaMensual"    TEXT,
@@ -104,8 +105,13 @@ CREATE INDEX IF NOT EXISTS "idx_deuda_usuario" ON "Deuda"("idUsuario");
 CREATE INDEX IF NOT EXISTS "idx_solicitud_credito" ON "SolicitudCredito"("idCredito");
 CREATE INDEX IF NOT EXISTS "idx_solicitud_estado" ON "SolicitudCredito"("idEstadoSolicitud");
 CREATE INDEX IF NOT EXISTS "idx_usuariocredito_usuario" ON "UsuarioCredito"("idUsuario");
+-- Índice de búsqueda determinista (HMAC) para detectar RUT duplicados sin descifrar los existentes.
+CREATE UNIQUE INDEX IF NOT EXISTS "idx_usuario_ruthash" ON "Usuario"("rutHash");
 
 ALTER TABLE "Usuario" ALTER COLUMN "nombreCompleto" TYPE TEXT USING "nombreCompleto"::TEXT;
+ALTER TABLE "Usuario" DROP CONSTRAINT IF EXISTS "Usuario_rut_key";
+ALTER TABLE "Usuario" ALTER COLUMN "rut" TYPE TEXT USING "rut"::TEXT;
+ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "rutHash" TEXT;
 ALTER TABLE "Usuario" ALTER COLUMN "fechaNacimiento" TYPE TEXT USING "fechaNacimiento"::TEXT;
 ALTER TABLE "Usuario" ALTER COLUMN "Saldo" DROP DEFAULT;
 ALTER TABLE "Usuario" ALTER COLUMN "Saldo" TYPE TEXT USING "Saldo"::TEXT;

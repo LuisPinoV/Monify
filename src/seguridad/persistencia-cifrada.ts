@@ -22,6 +22,16 @@ export class PersistenciaCifrada {
     return this.cifrado.encryptPackedAsimetrico(JSON.stringify(value));
   }
 
+  // Para campos clasificados como cifrado híbrido (ej. RUT).
+  protegerCampoHibrido(value: unknown): string {
+    return this.cifrado.encryptPackedHibrido(JSON.stringify(value));
+  }
+
+  // Índice determinista para detectar duplicados en campos cifrados (ej. RUT).
+  indiceBusqueda(value: string): string {
+    return this.cifrado.hashDeterminista(value);
+  }
+
   revelarCampo<T>(value: string | null): T | null {
     const plain = this.cifrado.decryptPacked(value);
     if (plain === null) return null;

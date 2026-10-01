@@ -1,5 +1,6 @@
 import type { Usuario } from '../../tipos.js';
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
+import type { QueryResult } from 'pg';
 import { BaseDatos } from '../../base-datos';
 import { PersistenciaCifrada } from '../../seguridad/persistencia-cifrada';
 import { ServicioAutenticacion } from '../autenticacion/servicio-autenticacion';
@@ -44,28 +45,47 @@ export class ServicioUsuarios {
     if (tipo.rowCount === 0) {
       throw new Error('tipoUsuario no existe');
     }
-    const resultado = await this.baseDatos.consultar<UsuarioRow>(`
+    const rutHash = this.persistenciaCifrada.indiceBusqueda(datos.rut);
+    await this.verificarRutDuplicado(rutHash);
+    let resultado: QueryResult<UsuarioRow>;
+    try {
+      resultado = await this.baseDatos.consultar<UsuarioRow>(`
       INSERT INTO "Usuario" (
-        "idTipoUsuario", "nombreCompleto", "rut", "fechaNacimiento", "Saldo",
+        "idTipoUsuario", "nombreCompleto", "rut", "rutHash", "fechaNacimiento", "Saldo",
         "rentaMensual", "numeroCelular", "EMAIL"
       )
       VALUES (
         $1,
-        $2, $3, $4, $5, $6, $7, $8
+        $2, $3, $4, $5, $6, $7, $8, $9
       )
       RETURNING "idUsuario" AS id,
             (SELECT "tipoUsuario" FROM "TipoUsuario" WHERE "idTipoUsuario" = $1) AS "tipoUsuario",
             "nombreCompleto" AS nombre,
                 "rut", "fechaNacimiento", "Saldo" AS saldo, "rentaMensual",
                 "numeroCelular", "EMAIL" AS correo, CURRENT_TIMESTAMP AS "creadoEn"
-    `, [tipo.rows[0].idTipoUsuario, this.persistenciaCifrada.protegerCampo(datos.nombre), datos.rut,
+    `, [tipo.rows[0].idTipoUsuario, this.persistenciaCifrada.protegerCampo(datos.nombre), this.persistenciaCifrada.protegerCampoHibrido(datos.rut), rutHash,
       this.persistenciaCifrada.protegerCampo(datos.fechaNacimiento), this.persistenciaCifrada.protegerCampo(0),
       datos.rentaMensual === undefined ? null : this.persistenciaCifrada.protegerCampo(datos.rentaMensual),
       datos.numeroCelular === undefined ? null : this.persistenciaCifrada.protegerCampo(datos.numeroCelular), datos.correo]);
+    } catch (error) {
+      throw this.esRutDuplicado(error) ? new ConflictException('el rut ya está registrado') : error;
+    }
     if (datos.contrasena) {
       await this.autenticacion.crearCredencial(String(resultado.rows[0].id), datos.contrasena);
     }
     return mapearUsuario(resultado.rows[0], this.persistenciaCifrada);
+  }
+
+  private async verificarRutDuplicado(rutHash: string): Promise<void> {
+    const existente = await this.baseDatos.consultar('SELECT 1 FROM "Usuario" WHERE "rutHash" = $1', [rutHash]);
+    if ((existente.rowCount ?? 0) > 0) {
+      throw new ConflictException('el rut ya está registrado');
+    }
+  }
+
+  private esRutDuplicado(error: unknown): boolean {
+    return typeof error === 'object' && error !== null && (error as { code?: string }).code === '23505'
+      && (error as { constraint?: string }).constraint === 'idx_usuario_ruthash';
   }
 }
 
@@ -85,6 +105,7 @@ interface UsuarioRow {
 function mapearUsuario(fila: UsuarioRow, persistenciaCifrada: PersistenciaCifrada): Usuario {
   const datos = {
     nombre: persistenciaCifrada.revelarCampo<string>(fila.nombre),
+    rut: persistenciaCifrada.revelarCampo<string>(fila.rut),
     fechaNacimiento: persistenciaCifrada.revelarCampo<string>(fila.fechaNacimiento),
     saldo: persistenciaCifrada.revelarCampo<number>(fila.saldo === null ? null : String(fila.saldo)),
     rentaMensual: persistenciaCifrada.revelarCampo<number>(fila.rentaMensual === null ? null : String(fila.rentaMensual)),
@@ -92,7 +113,7 @@ function mapearUsuario(fila: UsuarioRow, persistenciaCifrada: PersistenciaCifrad
   };
   return {
     id: String(fila.id), tipoUsuario: fila.tipoUsuario, nombre: datos.nombre ?? fila.nombre ?? `Usuario #${fila.id}`,
-    rut: fila.rut, fechaNacimiento: String(datos.fechaNacimiento ?? fila.fechaNacimiento ?? ''),
+    rut: datos.rut ?? fila.rut, fechaNacimiento: String(datos.fechaNacimiento ?? fila.fechaNacimiento ?? ''),
     saldo: Number(datos.saldo ?? fila.saldo ?? 0),
     rentaMensual: datos.rentaMensual === null ? undefined : Number(datos.rentaMensual),
     numeroCelular: datos.numeroCelular ?? undefined, correo: fila.correo,

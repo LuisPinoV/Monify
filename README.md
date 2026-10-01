@@ -135,7 +135,8 @@ para leer registros antiguos.
 | Montos de transacciones | Cifrado simétrico | Se necesitan recuperar para mostrar y operar | AES-256-GCM | Servicio financiero |
 | Montos de deudas, créditos y solicitudes | Cifrado asimétrico | Información crediticia sensible que puede usarse para chantaje o estafas de cobranza | RSA-OAEP | Servicio financiero |
 | Score, morosidad y datos de riesgo | Cifrado asimétrico | Información crediticia sensible usada para perfilamiento | RSA-OAEP | Servicio financiero |
-| RUT y correo | Sin cifrado reversible | Tienen `UNIQUE` y se usan para identificación/búsqueda; el cifrado estándar no permite esas operaciones | N/A | Columnas indexadas de PostgreSQL |
+| RUT | Cifrado híbrido | Identificador personal legalmente protegido; ya no permite búsqueda por igualdad al estar cifrado | AES-256-GCM + RSA-OAEP (clave envuelta) | Servicio de usuarios |
+| Correo | Sin cifrado reversible | Tiene `UNIQUE` y se usa para identificación/búsqueda | N/A | Columna indexada de PostgreSQL |
 | Contraseñas | Hash | Nunca deben recuperarse | bcrypt, 12 rounds | `ServicioHash`; autenticación pendiente |
 | IDs, estados y fechas de sistema | Sin cifrado | Son referencias, filtros o metadatos operativos | N/A | Columnas normales |
 

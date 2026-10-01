@@ -1,4 +1,4 @@
-const { createCipheriv, randomBytes, publicEncrypt } = require('node:crypto');
+const { createCipheriv, createHmac, randomBytes, publicEncrypt } = require('node:crypto');
 const { readFile } = require('node:fs/promises');
 const { Pool } = require('pg');
 
@@ -22,6 +22,30 @@ function encryptPackedAsimetrico(value) {
   return `va1.${ciphertext.toString('base64')}`;
 }
 
+function encryptPackedHibrido(value) {
+  const claveSesion = randomBytes(32);
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', claveSesion, iv);
+  const ciphertext = Buffer.concat([cipher.update(String(value), 'utf8'), cipher.final()]);
+  const claveEnvuelta = publicEncrypt({ key: clavePublica, oaepHash: 'sha256' }, claveSesion);
+  return `vh1.${claveEnvuelta.toString('base64')}.${iv.toString('base64')}.${cipher.getAuthTag().toString('base64')}.${ciphertext.toString('base64')}`;
+}
+
+function hashDeterminista(value) {
+  return createHmac('sha256', encryptionKey).update(String(value), 'utf8').digest('hex');
+}
+
+async function cifrarRutUsuario(client) {
+  const filas = await client.query('SELECT "idUsuario", "rut" FROM "Usuario"');
+  for (const fila of filas.rows) {
+    const valor = fila.rut;
+    if (valor === null || valor === undefined || String(valor).startsWith('vh1.')) continue;
+    await client.query('UPDATE "Usuario" SET "rut" = $1, "rutHash" = $2 WHERE "idUsuario" = $3', [
+      encryptPackedHibrido(valor), hashDeterminista(valor), fila.idUsuario
+    ]);
+  }
+}
+
 async function cifrarColumnas(client, tabla, columnas, cifrar = encryptPacked) {
   const seleccion = columnas.map((columna) => `"${columna}"`).join(', ');
   const filas = await client.query(`SELECT * FROM "${tabla}"`);
@@ -31,7 +55,7 @@ async function cifrarColumnas(client, tabla, columnas, cifrar = encryptPacked) {
     const condiciones = [];
     for (const columna of columnas) {
       const valor = fila[columna];
-      if (valor !== null && valor !== undefined && !String(valor).startsWith('v1.') && !String(valor).startsWith('va1.')) {
+      if (valor !== null && valor !== undefined && !String(valor).startsWith('v1.') && !String(valor).startsWith('va1.') && !String(valor).startsWith('vh1.')) {
         parametros.push(cifrar(valor));
         cambios[columna] = `$${parametros.length}`;
       }
@@ -58,6 +82,7 @@ async function main() {
     await client.query(seed);
     await client.query('BEGIN');
     await cifrarColumnas(client, 'Usuario', ['nombreCompleto', 'fechaNacimiento', 'Saldo', 'rentaMensual', 'numeroCelular']);
+    await cifrarRutUsuario(client);
     await cifrarColumnas(client, 'VerificadorDeIdentidad', ['fechaVerificacion', 'fechaExpiracion', 'metodoDeVerificacion']);
     await cifrarColumnas(client, 'ConsultaDeRiesgo', ['ScoreDeRiesgo', 'morosidad', 'tiempoDeMorosidad', 'cantidadDeuda', 'tiempoEnDeuda'], encryptPackedAsimetrico);
     await cifrarColumnas(client, 'Transaccion', ['montoTransaccion']);

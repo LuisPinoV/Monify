@@ -17,6 +17,11 @@ export class PersistenciaCifrada {
     return this.cifrado.encryptPacked(JSON.stringify(value));
   }
 
+  // Para campos clasificados como cifrado asimétrico (ej. datos de riesgo y crédito).
+  protegerCampoAsimetrico(value: unknown): string {
+    return this.cifrado.encryptPackedAsimetrico(JSON.stringify(value));
+  }
+
   revelarCampo<T>(value: string | null): T | null {
     const plain = this.cifrado.decryptPacked(value);
     if (plain === null) return null;

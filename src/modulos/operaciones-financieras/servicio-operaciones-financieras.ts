@@ -31,7 +31,7 @@ export class ServicioOperacionesFinancieras {
   }
 
   async crearDeuda(usuarioId: string, monto: number): Promise<Deuda> {
-    const resultado = await this.baseDatos.consultar<DeudaRow>('INSERT INTO "Deuda" ("idUsuario", "montoDeuda") VALUES ($1, $2) RETURNING "idDeuda" AS id, "idUsuario" AS "usuarioId", "montoDeuda" AS monto, "fechaDeuda" AS "creadaEn"', [Number(usuarioId), this.persistenciaCifrada.protegerCampo(monto)]);
+    const resultado = await this.baseDatos.consultar<DeudaRow>('INSERT INTO "Deuda" ("idUsuario", "montoDeuda") VALUES ($1, $2) RETURNING "idDeuda" AS id, "idUsuario" AS "usuarioId", "montoDeuda" AS monto, "fechaDeuda" AS "creadaEn"', [Number(usuarioId), this.persistenciaCifrada.protegerCampoAsimetrico(monto)]);
     const fila = resultado.rows[0];
     return { id: String(fila.id), usuarioId: String(fila.usuarioId), monto, creadaEn: fecha(fila.creadaEn) };
   }
@@ -57,7 +57,7 @@ export class ServicioOperacionesFinancieras {
   }
 
   async crearConsultaRiesgo(datos: Omit<ConsultaRiesgo, 'id' | 'consultadaEn'>): Promise<ConsultaRiesgo> {
-    const resultado = await this.baseDatos.consultar<RiesgoRow>('INSERT INTO "ConsultaDeRiesgo" ("idUsuario", "ScoreDeRiesgo", "morosidad", "tiempoDeMorosidad", "cantidadDeuda", "tiempoEnDeuda") VALUES ($1, $2, $3, $4, $5, $6) RETURNING "idConsulta" AS id, "idUsuario" AS "usuarioId", "ScoreDeRiesgo" AS score, "morosidad", "tiempoDeMorosidad", "cantidadDeuda", "tiempoEnDeuda", "fechaConsulta" AS "consultadaEn"', [Number(datos.usuarioId), this.persistenciaCifrada.protegerCampo(datos.score), this.persistenciaCifrada.protegerCampo(datos.morosidad), datos.tiempoDeMorosidad === undefined ? null : this.persistenciaCifrada.protegerCampo(datos.tiempoDeMorosidad), datos.cantidadDeuda === undefined ? null : this.persistenciaCifrada.protegerCampo(datos.cantidadDeuda), datos.tiempoEnDeuda === undefined ? null : this.persistenciaCifrada.protegerCampo(datos.tiempoEnDeuda)]);
+    const resultado = await this.baseDatos.consultar<RiesgoRow>('INSERT INTO "ConsultaDeRiesgo" ("idUsuario", "ScoreDeRiesgo", "morosidad", "tiempoDeMorosidad", "cantidadDeuda", "tiempoEnDeuda") VALUES ($1, $2, $3, $4, $5, $6) RETURNING "idConsulta" AS id, "idUsuario" AS "usuarioId", "ScoreDeRiesgo" AS score, "morosidad", "tiempoDeMorosidad", "cantidadDeuda", "tiempoEnDeuda", "fechaConsulta" AS "consultadaEn"', [Number(datos.usuarioId), this.persistenciaCifrada.protegerCampoAsimetrico(datos.score), this.persistenciaCifrada.protegerCampoAsimetrico(datos.morosidad), datos.tiempoDeMorosidad === undefined ? null : this.persistenciaCifrada.protegerCampoAsimetrico(datos.tiempoDeMorosidad), datos.cantidadDeuda === undefined ? null : this.persistenciaCifrada.protegerCampoAsimetrico(datos.cantidadDeuda), datos.tiempoEnDeuda === undefined ? null : this.persistenciaCifrada.protegerCampoAsimetrico(datos.tiempoEnDeuda)]);
     return mapearRiesgo(resultado.rows[0], this.persistenciaCifrada);
   }
 
@@ -67,7 +67,7 @@ export class ServicioOperacionesFinancieras {
   }
 
   async crearCredito(monto: number, tasaInteres: number): Promise<Credito> {
-    const resultado = await this.baseDatos.consultar<CreditoRow>('INSERT INTO "Credito" ("montoCredito", "tasaInteres") VALUES ($1, $2) RETURNING "idCredito" AS id, "montoCredito" AS monto, "tasaInteres" AS "tasaInteres"', [this.persistenciaCifrada.protegerCampo(monto), this.persistenciaCifrada.protegerCampo(tasaInteres)]);
+    const resultado = await this.baseDatos.consultar<CreditoRow>('INSERT INTO "Credito" ("montoCredito", "tasaInteres") VALUES ($1, $2) RETURNING "idCredito" AS id, "montoCredito" AS monto, "tasaInteres" AS "tasaInteres"', [this.persistenciaCifrada.protegerCampoAsimetrico(monto), this.persistenciaCifrada.protegerCampoAsimetrico(tasaInteres)]);
     return mapearCredito(resultado.rows[0], this.persistenciaCifrada);
   }
 
@@ -81,7 +81,7 @@ export class ServicioOperacionesFinancieras {
     if (credito.rowCount === 0) throw new NotFoundException('crédito no encontrado');
     const solicitud = await this.baseDatos.consultar<SolicitudRow>('INSERT INTO "SolicitudCredito" ("idCredito", "idEstadoSolicitud") SELECT $1, "idEstadoSolicitud" FROM "EstadoSolicitud" WHERE "estadoSolicitud" = \'recibida\' RETURNING "idSolicitudCredito" AS id, "idCredito" AS "creditoId", "fechaSolicitud" AS "creadaEn"', [Number(creditoId)]);
     const fila = solicitud.rows[0];
-    await this.baseDatos.consultar('INSERT INTO "UsuarioCredito" ("idSolicitudCredito", "idUsuario", "montoFinal") VALUES ($1, $2, $3)', [fila.id, Number(usuarioId), this.persistenciaCifrada.protegerCampo(montoSolicitado)]);
+    await this.baseDatos.consultar('INSERT INTO "UsuarioCredito" ("idSolicitudCredito", "idUsuario", "montoFinal") VALUES ($1, $2, $3)', [fila.id, Number(usuarioId), this.persistenciaCifrada.protegerCampoAsimetrico(montoSolicitado)]);
     return { id: String(fila.id), usuarioId, creditoId, montoSolicitado, estado: 'recibida', creadaEn: fecha(fila.creadaEn) };
   }
 

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, privateDecrypt, publicEncrypt, randomBytes } from 'node:crypto';
 
 export interface ValorCifrado {
   ciphertext: string;
@@ -11,6 +11,8 @@ export interface ValorCifrado {
 @Injectable()
 export class ServicioCifrado {
   private readonly clave: Buffer;
+  private readonly clavePublica: string;
+  private readonly clavePrivada: string;
 
   constructor(config: ConfigService) {
     const valor = config.get<string>('ENCRYPTION_KEY');
@@ -21,6 +23,14 @@ export class ServicioCifrado {
     if (this.clave.length !== 32) {
       throw new Error('ENCRYPTION_KEY debe ser una clave base64 de 32 bytes');
     }
+
+    const publica = config.get<string>('RSA_PUBLIC_KEY');
+    const privada = config.get<string>('RSA_PRIVATE_KEY');
+    if (!publica || !privada) {
+      throw new Error('RSA_PUBLIC_KEY y RSA_PRIVATE_KEY son obligatorias para iniciar la aplicación');
+    }
+    this.clavePublica = publica.replace(/\\n/g, '\n');
+    this.clavePrivada = privada.replace(/\\n/g, '\n');
   }
 
   encrypt(value: string): ValorCifrado {
@@ -50,8 +60,32 @@ export class ServicioCifrado {
     return `v1.${encrypted.iv}.${encrypted.authTag}.${encrypted.ciphertext}`;
   }
 
+  // Cifrado asimétrico directo con RSA-OAEP, para valores pequeños que no requieren una clave compartida.
+  encryptAsimetrico(value: string): string {
+    const ciphertext = publicEncrypt(
+      { key: this.clavePublica, oaepHash: 'sha256' },
+      Buffer.from(value, 'utf8')
+    );
+    return ciphertext.toString('base64');
+  }
+
+  decryptAsimetrico(value: string): string {
+    const plano = privateDecrypt(
+      { key: this.clavePrivada, oaepHash: 'sha256' },
+      Buffer.from(value, 'base64')
+    );
+    return plano.toString('utf8');
+  }
+
+  encryptPackedAsimetrico(value: string): string {
+    return `va1.${this.encryptAsimetrico(value)}`;
+  }
+
   decryptPacked(value: string | null): string | null {
     if (value === null) return null;
+    if (value.startsWith('va1.')) {
+      return this.decryptAsimetrico(value.slice('va1.'.length));
+    }
     if (!value.startsWith('v1.')) return value;
     const [, iv, authTag, ciphertext] = value.split('.');
     return this.decrypt({ ciphertext, iv, authTag });

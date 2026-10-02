@@ -1,0 +1,24 @@
+@startuml
+title Flujo 3 - Lectura de una operacion financiera
+skinparam shadowing false
+skinparam monochrome true
+skinparam activity {
+	BackgroundColor White
+	BorderColor Black
+	DiamondBackgroundColor White
+	DiamondBorderColor Black
+}
+
+start
+:Usuario selecciona la operacion de Consulta;
+:API recibe GET /transacciones;
+	:Controlador solicita el historial;
+	:PostgreSQL devuelve montos cifrados;
+	:PersistenciaCifrada descifra y valida authTag;
+	:Servicio financiero transforma el historial;
+	:API responde HTTP 200 con datos legibles;
+
+stop
+
+
+@enduml

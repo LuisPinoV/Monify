@@ -1,0 +1,35 @@
+@startuml
+title Flujo 1 - Autenticacion de usuario
+skinparam shadowing false
+skinparam monochrome true
+skinparam activity {
+	BackgroundColor White
+	BorderColor Black
+	DiamondBackgroundColor White
+	DiamondBorderColor Black
+}
+
+start
+:Usuario ingresa correo y contrasena;
+:API Monify recibe\nPOST /autenticacion/iniciar-sesion;
+:Controlador valida y deriva\nlas credenciales;
+:ServicioAutenticacion busca\nusuario, rol y hash en PostgreSQL;
+:PostgreSQL devuelve la credencial almacenada;
+:ServicioHash compara contrasena\ncon hash bcrypt;
+
+if (Credenciales coinciden?) then (si)
+	:JwtService firma accessToken;
+	:API responde usuario + token;
+	:Usuario obtiene acceso autenticado;
+else (no)
+	:API responde error 401;
+	:Usuario recibe acceso rechazado;
+endif
+
+stop
+
+note right
+La contrasena nunca se descifra:
+se compara contra bcrypt.
+end note
+@enduml

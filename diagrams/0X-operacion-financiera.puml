@@ -1,0 +1,41 @@
+@startuml
+title Flujo 2 - Registro y lectura de una operacion financiera
+skinparam shadowing false
+skinparam monochrome true
+skinparam activity {
+	BackgroundColor White
+	BorderColor Black
+	DiamondBackgroundColor White
+	DiamondBorderColor Black
+}
+
+start
+:Usuario selecciona una operacion;
+if (Registrar o consultar?) then (registrar)
+	:Usuario envia usuarioId y monto;
+	:API recibe POST /transacciones;
+	:Controlador valida monto positivo;
+	if (Datos validos?) then (si)
+		:Servicio financiero prepara la transaccion;
+		:ServicioCifrado aplica AES-256-GCM;
+		:PostgreSQL guarda la transacción cifrada;
+		:API responde HTTP 201 y confirmacion;
+	else (no)
+		:API responde HTTP 400;
+	endif
+else (consultar)
+	:API recibe GET /transacciones;
+	:Controlador solicita el historial;
+	:PostgreSQL devuelve montos cifrados;
+	:PersistenciaCifrada descifra y valida authTag;
+	:Servicio financiero transforma el historial;
+	:API responde HTTP 200 con datos legibles;
+endif
+
+stop
+
+note right
+Transformacion: monto en texto plano -> AES-256-GCM -> columna protegida
+-> descifrado controlado -> respuesta JSON.
+end note
+@enduml

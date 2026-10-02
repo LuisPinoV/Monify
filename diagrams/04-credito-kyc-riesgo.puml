@@ -1,0 +1,37 @@
+@startuml
+title Flujo 4 - Solicitud, KYC y evaluacion de credito
+skinparam shadowing false
+skinparam monochrome true
+skinparam activity {
+	BackgroundColor White
+	BorderColor Black
+	DiamondBackgroundColor White
+	DiamondBorderColor Black
+}
+
+start
+:Usuario envia datos de identidad\na la API Monify;
+:Controlador registra la solicitud KYC;
+:Entidad verificadora valida la identidad;
+:Servicio financiero recibe el resultado KYC;
+:PostgreSQL guarda el estado de verificacion;
+
+if (KYC aprobado?) then (si)
+	:Usuario envia creditoId y monto solicitado;
+	:API recibe POST /solicitudes-credito;
+	:Controlador valida los datos;
+	:Servicio verifica que exista el credito;
+	:PostgreSQL crea la solicitud\nen estado recibida;
+	:Servicio registra los antecedentes\npara evaluacion de riesgo;
+	:Administrador de riesgo revisa\nla solicitud y antecedentes;
+	:Administrador envia PATCH\n/solicitudes-credito/:id/estado;
+	:Servicio actualiza el estado;
+	:PostgreSQL guarda la decision;
+	:API informa el estado final al usuario;
+else (no)
+	:API informa KYC rechazado;
+endif
+
+stop
+
+@enduml

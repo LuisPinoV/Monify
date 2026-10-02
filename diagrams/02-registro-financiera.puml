@@ -1,0 +1,28 @@
+@startuml
+title Flujo 2 - Registro de una operacion financiera
+skinparam shadowing false
+skinparam monochrome true
+skinparam activity {
+	BackgroundColor White
+	BorderColor Black
+	DiamondBackgroundColor White
+	DiamondBorderColor Black
+}
+
+start
+:Usuario selecciona la operacion de Registro;
+:Usuario envia usuarioId y monto;
+	:API recibe POST /transacciones;
+	:Controlador valida monto positivo;
+	if (Datos validos?) then (si)
+		:Servicio financiero prepara la transaccion;
+		:ServicioCifrado aplica AES-256-GCM;
+		:PostgreSQL guarda la transacción cifrada;
+		:API responde HTTP 201 y confirmacion;
+	else (no)
+		:API responde HTTP 400;
+	endif
+
+stop
+
+@enduml

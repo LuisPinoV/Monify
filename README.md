@@ -140,9 +140,70 @@ para leer registros antiguos.
 | Contraseñas | Hash | Nunca deben recuperarse | bcrypt, 12 rounds | `ServicioHash`; autenticación pendiente |
 | IDs, estados y fechas de sistema | Sin cifrado | Son referencias, filtros o metadatos operativos | N/A | Columnas normales |
 
-No se implementó JWT porque todavía no existe autenticación ni un flujo de
-tokens en este proyecto. Cuando se agregue, debe usar `@nestjs/jwt` y no incluir
-datos sensibles directamente en el payload.
+### Cómo se cifra y descifra cada dato
+
+El flujo es el mismo para cualquier endpoint que escriba o lea un campo
+sensible, y siempre pasa por `ServicioCifrado`, nunca por el controller:
+
+1. La API recibe el dato en texto plano a través de HTTPS (ver sección de
+   cifrado en tránsito).
+2. El service correspondiente (`ServicioUsuarios`, `ServicioFinanciero`, etc.)
+   recibe el payload y lo cifra usando AES - 256, generando el Ciphertext, IV y el AuthTag.
+3. Las 3 claves se concatenan y se guardan en la columna correspondiente (si se cifro un nombre se guarda en la columna nombre)
+4. De esta forma la clave no queda en texto plano a menos que se aplique la clave de descifrado.
+
+**Cifrado simétrico (AES-256-GCM)** — para nombre, fecha de nacimiento, saldo,
+renta, celular y montos de transacciones. Cada vez que se cifra un valor se
+genera un IV aleatorio nuevo (nunca se reutiliza con la misma clave), y GCM
+produce además un `authTag`. Al descifrar, recalcula el tag
+y lo compara con el guardado: si no coinciden —porque alguien modificó el
+valor cifrado directamente en la base, por ejemplo— el descifrado falla en
+vez de devolver un dato corrupto sin avisar.
+
+```json
+{
+  "ciphertext": "xS0+nGeT9Ns=",
+  "iv": "vVxihPtjklFlr9Cc",
+  "authTag": "S5xfVkstZqljq6pYNqMcSg=="
+}
+```
+
+**Cifrado asimétrico (RSA-OAEP)** — para montos de deudas, créditos,
+solicitudes, score, morosidad y datos de riesgo. El cifrado se hace con
+`RSA_PUBLIC_KEY`, así que cualquier parte del sistema que necesite *escribir*
+estos campos puede hacerlo sin tener acceso a la clave privada. Solo
+`RSA_PRIVATE_KEY` —guardada aparte, nunca en el mismo lugar que la pública en
+un despliegue real— puede descifrarlos. Esto da una capa extra de defensa: un
+atacante que solo comprometa el proceso que escribe datos no puede leer los
+que ya están cifrados.
+
+```json
+{
+  "ciphertext": "Qm1z9FhC2...=="
+}
+```
+
+**Cifrado híbrido (envelope encryption)** — exclusivo para el RUT. RSA no se
+usa para cifrar el valor directamente; en vez de eso:
+1. Se genera una clave AES de un solo uso (clave de datos) para ese registro.
+2. El RUT se cifra con esa clave usando AES-256-GCM (igual que en el caso
+   simétrico: ciphertext + iv + authTag).
+3. La clave de datos se cifra con `RSA_PUBLIC_KEY` (RSA-OAEP) y se guarda junto
+   al resto.
+
+```json
+{
+  "ciphertext": "ZP4p1TqV+LQwMSYs",
+  "iv": "h1oESW1QOQSMbINu",
+  "authTag": "96kH/KytKpADtD29X2eR1w==",
+  "claveEnvuelta": "Qm1z9FhC2...=="
+}
+```
+
+Esto evita el límite de tamaño de RSA (no se puede cifrar directamente texto
+largo con RSA-OAEP) y es la razón por la que el RUT ya no admite búsqueda por
+igualdad en SQL: para comparar dos RUTs hay que descifrarlos primero, no se
+puede hacer `WHERE rut = '...'` contra el valor cifrado.
 
 Genera una clave para desarrollo con:
 
@@ -165,6 +226,33 @@ imprimas en logs. El seed SQL conserva su función de simulación, pero los
 registros creados directamente por SQL no pasan por `ServicioCifrado`; para
 datos simulados protegidos, créalos mediante los endpoints de la API o ejecuta
 un proceso de migración que cifre los registros existentes antes de usarlos.
+
+### Autenticación con JWT
+
+El login no cifra la contraseña, la compara: `ServicioHash.compare(...)`
+toma la contraseña recibida y el hash bcrypt guardado en
+`credencialesAutenticacion.contraseña`, y evalúa si coinciden sin necesitar
+nunca la contraseña original.
+
+Flujo de `POST /auth/login`:
+1. El usuario envía `email` y `contraseña`.
+2. `ServicioHash.compare` valida la contraseña contra el hash almacenado.
+3. Si coincide, se firma un JWT con `JWT_SECRET` (algoritmo HS256), con un
+   payload mínimo (`sub` con el `idUsuario`, el rol, `iat` y `exp`) y una
+   expiración corta (por ejemplo 15 minutos).
+4. El token se devuelve al cliente, que lo adjunta en cada request protegido
+   con el header `Authorization: Bearer <token>`.
+5. Un guard (`JwtAuthGuard`) valida la firma y la expiración en cada endpoint
+   que lo requiera, antes de dejar pasar la request al controller.
+
+Genera la clave de firma para desarrollo con:
+
+```bash
+openssl rand -hex 32
+```
+
+Guárdala únicamente en `.env` como `JWT_SECRET`; no la versiones ni la
+imprimas en logs, igual que `ENCRYPTION_KEY` y el par RSA.
 
 -----
 

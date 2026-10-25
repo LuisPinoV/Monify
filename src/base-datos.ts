@@ -3,8 +3,13 @@ import { access, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Pool, type QueryResult, type QueryResultRow } from 'pg';
 
+// Lo implementan BaseDatos y el ejecutor de una transacción, para que los servicios acepten cualquiera de los dos.
+export interface Ejecutor {
+  consultar<T extends QueryResultRow>(texto: string, parametros?: unknown[]): Promise<QueryResult<T>>;
+}
+
 @Injectable()
-export class BaseDatos implements OnModuleInit, OnModuleDestroy {
+export class BaseDatos implements Ejecutor, OnModuleInit, OnModuleDestroy {
   private readonly pool = new Pool({
     connectionString: process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/monify',
     max: Number(process.env.DATABASE_POOL_MAX ?? 10)
@@ -26,6 +31,23 @@ export class BaseDatos implements OnModuleInit, OnModuleDestroy {
 
   consultar<T extends QueryResultRow>(texto: string, parametros: unknown[] = []): Promise<QueryResult<T>> {
     return this.pool.query<T>(texto, parametros);
+  }
+
+  async transaccion<T>(trabajo: (ejecutor: Ejecutor) => Promise<T>): Promise<T> {
+    const cliente = await this.pool.connect();
+    try {
+      await cliente.query('BEGIN');
+      const resultado = await trabajo({
+        consultar: <R extends QueryResultRow>(texto: string, parametros: unknown[] = []) => cliente.query<R>(texto, parametros)
+      });
+      await cliente.query('COMMIT');
+      return resultado;
+    } catch (error) {
+      await cliente.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      cliente.release();
+    }
   }
 
   private async encontrarEsquema(rutas: string[]): Promise<string> {

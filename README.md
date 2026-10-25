@@ -34,111 +34,192 @@ El grupo debe diseñar la plataforma que gestiona: cuentas de usuario, transfere
 - RxJS 7.8.2
 - `reflect-metadata` 0.2.2
 
-## Base de datos
+## Puesta en marcha
 
-Monify utiliza PostgreSQL 16 y Docker Compose para ejecutar la base de datos
-localmente. Instala las dependencias desde la raíz del proyecto y luego usa los
-atajos definidos en `package.json`:
+Requisitos: Node.js 20+, pnpm y Docker (para PostgreSQL 16).
 
 ```bash
 cp .env.example .env
-# Edita .env y reemplaza change-me por una contraseña local.
+# Completa POSTGRES_PASSWORD, DATABASE_URL, ENCRYPTION_KEY, JWT_SECRET y el par RSA (ver "Protección de datos").
+# Opcional: ADMIN_INICIAL_CORREO y ADMIN_INICIAL_CONTRASENA para crear el primer Admin.
 pnpm install
-pnpm run db:up
-DATABASE_URL="$(grep '^DATABASE_URL=' .env | cut -d= -f2-)" pnpm run desarrollo
+pnpm run db:up          # PostgreSQL con el esquema de db/init
+pnpm run db:seed        # (solo desarrollo) datos ficticios cifrados y seudonimizados
+pnpm run desarrollo     # API + panel en http://localhost:3000
 ```
 
-### Comandos disponibles
+Al iniciar, la API aplica el esquema (`db/init/01-monify_schema.sql`) y crea, si
+no existe, la base separada de la bóveda de seudónimos (`<base>_vault`). Si la
+base fue creada con el diseño anterior (tabla `TipoUsuario`) el arranque se
+detiene: recréala con `pnpm run db:reset` y vuelve a cargar la semilla.
+
+### Primer Admin
+
+El autoregistro solo crea titulares (rol Usuario) y las cuentas del personal las
+crea un Admin. Para tener el primero, define `ADMIN_INICIAL_CORREO` y
+`ADMIN_INICIAL_CONTRASENA` en `.env`: al iniciar, si no existe ningún Admin
+activo, se crea con esos datos. Después borra la contraseña del `.env`.
+
+### Datos de desarrollo (`pnpm run db:seed`)
+
+Vacía la base y la bóveda y crea, a través de los servicios de la aplicación,
+cuentas del personal y titulares **ficticios** (nombres, RUT y montos
+aleatorios): nunca datos reales. Solo se ejecuta con `ENTORNO=desarrollo`. Todas
+las cuentas usan la contraseña `Monify2026!` (configurable con `SEED_CONTRASENA`):
+
+| Rol | Correo |
+| --- | --- |
+| Admin | `admin@monify.dev` |
+| Administrador de riesgo | `administrador.riesgo@monify.dev` (contraseña con vigencia de 24 h) |
+| Auditor | `auditor@monify.dev` |
+| Operador financiero | `operador.financiero@monify.dev` |
+| Usuario | se imprimen al terminar la semilla (`…@ejemplo.dev`) |
+
+### Comandos
 
 | Comando | Descripción |
 | --- | --- |
-| `pnpm run db:up` | Levanta PostgreSQL en segundo plano. En un volumen nuevo carga el schema y los datos iniciales. |
-| `pnpm run db:down` | Detiene el contenedor y conserva el volumen de datos. |
+| `pnpm run db:up` / `db:down` | Levanta o detiene PostgreSQL (el volumen se conserva). |
 | `pnpm run db:reset` | Elimina el volumen y recrea la base desde cero. |
-| `pnpm run db:seed` | Ejecuta el cargador de datos iniciales dentro del contenedor. |
-| `pnpm run db:recrear-cifrados` | Borra todos los registros y los recrea usando la `ENCRYPTION_KEY` actual. |
-| `pnpm run db:psql` | Abre una consola `psql` dentro del contenedor. |
-| `pnpm run db:logs` | Muestra los logs de PostgreSQL en tiempo real. |
+| `pnpm run db:seed` | Compila y carga los datos ficticios de desarrollo. |
+| `pnpm run db:psql` / `db:logs` | Consola `psql` y logs del contenedor. |
+| `pnpm run desarrollo` | API con recarga automática. |
+| `pnpm run prueba:humo` | Prueba de punta a punta contra la API en ejecución (ver abajo). |
 
-Para comprobar que el contenedor está funcionando:
+`prueba:humo` necesita la API corriendo y las credenciales de un Admin, por
+ejemplo con la semilla cargada:
+`BASE_URL=http://localhost:3000 ADMIN_CORREO=admin@monify.dev ADMIN_CONTRASENA=Monify2026! pnpm run prueba:humo`.
 
-```bash
-docker compose ps
-pnpm run db:logs
-```
+### Ambientes
 
-PostgreSQL solo ejecuta automáticamente los archivos de inicialización cuando
-el volumen está vacío. Si modificas el schema o necesitas una carga limpia,
-usa:
+Desarrollo y producción usan bases de datos distintas (`DATABASE_URL` y
+`VAULT_DATABASE_URL` propias de cada `.env`). La de desarrollo solo contiene
+datos generados por la semilla; las medidas de seguridad (cifrado,
+seudonimización, RBAC y auditoría) son las mismas en ambos ambientes.
 
-```bash
-pnpm run db:reset
-```
+## Actividad 4: privacidad, RBAC, auditoría y no repudio
 
-El servicio publica PostgreSQL en `localhost:5433` por defecto para no interferir
-con una instalación local en `localhost:5432`. La aplicación se conecta usando
-`DATABASE_URL`:
+### Minimización, seudonimización y anonimización
 
-```text
-postgresql://postgres:tu_clave@localhost:5433/monify
-```
+| Tabla | Campo | Decisión del informe | Implementación |
+| --- | --- | --- | --- |
+| Usuario | `nombreCompleto`, `rut`, `numeroCelular`, `email` | Seudónimo | Palabras o números aleatorios (`Zorro-Azul-1a2b3c`, `ID-0123456789`, `TEL-…`, `u-…@seudonimo.monify.invalid`). El original, cifrado (AES-256-GCM + RSA-OAEP), vive en la bóveda separada `monify_vault`. |
+| Usuario | `fechaNacimiento` | Indicador de mayoría de edad | Se valida al registrar y solo se guarda `esMayorEdad`. |
+| Usuario | `rentaMensual` | Tramo de renta | `tramoRenta` (T1–T5), cifrado. |
+| Usuario / AdministradorRiesgo | `isAccessBlocked` | Conservar / ofuscar | En el administrador de riesgo la columna se llama `flagAcc`. |
+| Rol (antes TipoUsuario) | `tipoUsuario` | Seudonimizar | Códigos `Tu`, `Ta`, `Tr`, `Tau`, `To`; el significado solo existe en la aplicación. |
+| CredAuthUser | `contraseña` | Solo hash | bcrypt (12 rondas). |
+| CredAuthAdministrador | `contraseña` | Plazo de 24 horas | Columna `expiraEn`; el login se rechaza al vencer y un Admin la restablece. |
+| ConsultaDeRiesgo | `cantidadDeDeuda` | Eliminar | Columna eliminada. |
+| ConsultaDeRiesgo | `tiempoDeMorosidad`, `tiempoEnDeuda` | Tramos | Se reciben días y se guarda el tramo (`0`, `1-30`, `31-90`, `91-180`, `181+`), cifrado. |
+| Tarjeta | `CVV`, `fechaVencimiento` | Eliminar | Columnas eliminadas; los valida el procesador de pagos. |
+| Tarjeta | `numeroTarjeta`, `saldo` | Conservar con cifrado | AES-256-GCM; en pantalla solo `•••• 1234`. |
+| VerificadorDeIdentidad | `hashDeVerificacion` | Solo hash | bcrypt del comprobante del verificador externo. |
+| AdministradorRiesgo | `fechaNacimiento` | Eliminar | Columna eliminada. |
 
-Puedes cambiar el puerto y las credenciales mediante variables de entorno al
-levantar Compose, por ejemplo:
+**Anonimización.** Al eliminar su cuenta (`DELETE /usuarios/me`), el titular
+pasa a `estadoCuenta = 'eliminada'`: los seudónimos se reemplazan por valores
+`ANON-…`, se borran los vínculos de la bóveda, la credencial, el tramo de renta y
+los índices de búsqueda, y se anonimiza el número de tarjeta. Los registros
+contables y la bitácora se conservan sin poder identificar a la persona.
 
-```bash
-DB_PORT=5433 POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres \
-POSTGRES_DB=monify pnpm run db:up
-```
+**Datos personales fuera de la base.** La bitácora guarda el canal y el
+dispositivo declarados (no la IP) y su campo `detalle` va cifrado. Las listas
+para el personal muestran solo seudónimos, el JWT no lleva datos personales y la
+exportación de datos solo la puede pedir el propio titular.
 
-El archivo `db/seed/10-seed.sql` queda disponible para datos iniciales adicionales.
-Para datos de desarrollo protegidos con AES-256-GCM usa `pnpm run db:recrear-cifrados`;
-no uses `db:seed` para este propósito, porque los inserts SQL directos no pasan por
-el servicio de cifrado de NestJS.
+### Role-Based Access Control
 
-### Usuarios y billeteras
+La matriz está en `src/modulos/autorizacion/permisos.ts` y la aplica un guard
+global (denegar por defecto: todo endpoint declara `@Publica`, `@SoloAutenticado`
+o `@Permiso`). Las reglas posibles son:
 
-- `GET /usuarios`: lista usuarios.
-- `POST /usuarios`: crea un usuario con `tipoUsuario`, `nombre`, `rut`, `fechaNacimiento`, `correo` y opcionalmente `rentaMensual` y `numeroCelular`.
-- `GET /billeteras`: muestra el saldo de cada usuario desde `Usuario.Saldo`.
-- `POST /billeteras`: consulta el saldo del usuario indicado; no crea una tabla ni un registro adicional. La moneda es siempre CLP.
+- **Solo propio**: el titular sobre sus propios datos.
+- **Permitido**: sobre cualquier titular.
+- **Según necesidad**: sobre otros titulares solo indicando un motivo (cabecera
+  `X-Motivo-Acceso`, campo "Motivo de acceso" en el panel). El acceso y su motivo
+  quedan en la bitácora como `acceso.por_necesidad`.
+- **Con autorización expresa**: el titular otorga acceso temporal (máximo 72 h)
+  a un Auditor u Operador financiero desde "Privacidad y datos". Los logs del
+  sistema se abren al Admin solo con una autorización otorgada por un Auditor.
+- **Acceso a claves criptográficas**: denegado a todos los roles (no existe
+  ningún endpoint que las exponga).
 
-### Operaciones financieras
+Supuestos tomados donde el informe no es explícito: el Auditor puede revisar los
+logs (su función es analizarlos, aunque la tabla marca "Denegada") y para "Ver
+deuda" se le aplica el mismo criterio que para el historial (autorización expresa).
 
-- `GET|POST /transacciones`: historial y registro de transacciones.
-- `GET|POST /deudas`: historial y registro de deudas.
-- `GET|POST /verificaciones-identidad`: casos de verificación de identidad.
-- `GET|POST /consultas-riesgo`: consultas y resultados de riesgo.
-- `GET|POST /creditos`: catálogo de créditos.
-- `GET|POST /solicitudes-credito`: solicitudes de crédito asociadas a un crédito.
-- `PATCH /solicitudes-credito/:id/estado`: cambia el estado de una solicitud.
+### Términos y Condiciones, consentimientos y no repudio
 
-Los estados admitidos para solicitudes son `recibida`, `evaluacion`, `aprobada`
-y `rechazada`.
+- `GET /terminos` publica el TOS versionado (`src/modulos/terminos/terminos.ts`):
+  requisitos, cuenta, transacciones, créditos, protección de datos, auditoría,
+  responsabilidad y **cierre de cuenta** (saldo $0, sin deudas, créditos ni
+  solicitudes en curso, contraseña y casilla de confirmación).
+- El registro exige marcar la aceptación de los términos y del tratamiento de
+  datos. Cada aceptación queda en `UserConsent` (finalidad, versión, canal y
+  fecha). Si sube la versión, el usuario debe aceptarla para seguir operando.
+- **No repudio.** Las acciones críticas (aceptar el TOS, transacciones, solicitar
+  y resolver créditos, eliminar la cuenta) exigen una casilla
+  (`confirmacionNoRepudio: true`). Se guarda en `EvidenciaNoRepudio` el texto
+  exacto aceptado, quién, cuándo, canal, dispositivo y una huella HMAC de los
+  datos, todo firmado con RSA-SHA256. La tabla es de solo anexado (un trigger
+  impide `UPDATE` y `DELETE`).
+
+### Auditoría
+
+`UserLogs` registra cada acción autenticada (y los intentos de login): actor,
+acción, resultado (éxito, denegado o fallo), fecha, sistema, **canal**
+(`web`, `movil` o `api`, cabecera `X-Canal`) y **dispositivo** (`X-Dispositivo` o
+User-Agent). Es de solo anexado y cada registro encadena el hash del anterior:
+`GET /auditoria/integridad` recorre la cadena y detecta cualquier alteración o
+eliminación. Cada persona ve su propia actividad en `GET /usuarios/me/actividad`.
+
+### Endpoints principales
+
+| Ruta | Acceso |
+| --- | --- |
+| `POST /usuarios` | Público: autoregistro con aceptación del TOS. |
+| `POST /auth/login` | Público. Bloqueo tras 5 intentos fallidos. |
+| `GET /terminos` | Público. |
+| `GET /usuarios/me`, `PATCH /usuarios/me`, `DELETE /usuarios/me` | Perfil propio, actualización y cierre de cuenta. |
+| `GET /usuarios/me/exportar` | Portabilidad: descarga de todos los datos propios. |
+| `GET /usuarios/me/actividad` | Bitácora propia. |
+| `GET /billeteras`, `POST /tarjetas`, `GET /bancos` | Billetera propia. |
+| `GET/POST /transacciones`, `GET/POST /deudas` | Según la matriz RBAC. |
+| `GET/POST /creditos`, `GET/POST /solicitudes-credito`, `PATCH /solicitudes-credito/:id/estado` | Según la matriz RBAC. |
+| `GET/POST /verificaciones-identidad`, `GET/POST /consultas-riesgo`, `GET /informacion-financiera` | Según la matriz RBAC. |
+| `GET /consentimientos`, `POST /consentimientos/terminos`, `POST /consentimientos/:id/revocar` | Titular. |
+| `GET/POST /autorizaciones`, `DELETE /autorizaciones/:id` | Titular y Auditor. |
+| `GET /usuarios`, `PATCH /usuarios/:id/bloqueo` | Personal (seudónimos) / Admin. |
+| `POST /admin/cuentas`, `PATCH /admin/usuarios/:id/rol`, `POST /admin/cuentas/:id/contrasena` | Admin. |
+| `GET /rbac/matriz`, `GET /rbac/mis-permisos` | Admin / cualquier sesión. |
+| `GET /auditoria/logs`, `GET /auditoria/integridad`, `GET /auditoria/evidencias` | Auditor (Admin con autorización). |
+
+### Panel web
+
+`http://localhost:3000` sirve el panel. Tiene registro con aceptación del TOS y
+muestra a cada rol solo las secciones que su matriz permite: billetera y
+transacciones con casilla de no repudio, créditos, verificación y riesgo,
+privacidad (consentimientos, autorizaciones, exportación y eliminación de la
+cuenta), administración (cuentas, roles, bloqueos y matriz RBAC) y auditoría
+(bitácora, verificación de integridad y evidencias firmadas).
 
 ## Protección de datos
 
-El módulo global `src/seguridad` contiene `ServicioCifrado`, que usa
-AES-256-GCM con una clave base64 de 32 bytes tomada de `ENCRYPTION_KEY` para
-cifrado simétrico y RSA-OAEP con el par `RSA_PUBLIC_KEY`/`RSA_PRIVATE_KEY` para
-cifrado asimétrico, y `ServicioHash`, que usa bcrypt con 12 rondas. Los datos
-personales y financieros se protegen en la capa de persistencia campo por campo
-mediante `camposCifrados` (cada propiedad contiene su propio `ciphertext`, `iv`
-y `authTag` para los campos simétricos, o un `ciphertext` RSA para los
-asimétricos); los controladores no realizan cifrado directamente. Las columnas
-`datosCifrados`, `datosCifradosIv` y `datosCifradosAuthTag` se conservan solo
-para leer registros antiguos.
+El módulo global `src/seguridad` contiene `ServicioCifrado` (AES-256-GCM con
+`ENCRYPTION_KEY`, RSA-OAEP con `RSA_PUBLIC_KEY`/`RSA_PRIVATE_KEY`, HMAC para
+índices y firmas RSA-SHA256), `ServicioHash` (bcrypt, 12 rondas) y
+`ServicioSeudonimos` (bóveda de seudónimos).
 
-| Campo | Técnica | Justificación | Algoritmo | Dónde se protege |
-| --- | --- | --- | --- | --- |
-| Nombre, fecha de nacimiento, saldo, renta y celular | Cifrado simétrico | Se necesitan recuperar para mostrar o calcular | AES-256-GCM | Servicio de usuarios |
-| Montos de transacciones | Cifrado simétrico | Se necesitan recuperar para mostrar y operar | AES-256-GCM | Servicio financiero |
-| Montos de deudas, créditos y solicitudes | Cifrado asimétrico | Información crediticia sensible que puede usarse para chantaje o estafas de cobranza | RSA-OAEP | Servicio financiero |
-| Score, morosidad y datos de riesgo | Cifrado asimétrico | Información crediticia sensible usada para perfilamiento | RSA-OAEP | Servicio financiero |
-| RUT | Cifrado híbrido | Identificador personal legalmente protegido; ya no permite búsqueda por igualdad al estar cifrado | AES-256-GCM + RSA-OAEP (clave envuelta) | Servicio de usuarios |
-| Correo | Sin cifrado reversible | Tiene `UNIQUE` y se usa para identificación/búsqueda | N/A | Columna indexada de PostgreSQL |
-| Contraseñas | Hash | Nunca deben recuperarse | bcrypt, 12 rounds | `ServicioHash`; autenticación pendiente |
-| IDs, estados y fechas de sistema | Sin cifrado | Son referencias, filtros o metadatos operativos | N/A | Columnas normales |
+| Campo | Técnica | Algoritmo |
+| --- | --- | --- |
+| Nombre, RUT, celular y correo | Seudónimo + original cifrado en la bóveda | AES-256-GCM + RSA-OAEP (híbrido) |
+| Tramo de renta, número de tarjeta, saldos y montos de transacciones | Cifrado simétrico | AES-256-GCM |
+| Montos de deudas, créditos y solicitudes; score, morosidad y tramos de riesgo | Cifrado asimétrico | RSA-OAEP |
+| Detalle de la bitácora | Cifrado simétrico | AES-256-GCM |
+| Contraseñas y comprobantes KYC | Hash | bcrypt, 12 rondas |
+| Búsqueda por RUT y correo | Índice determinista | HMAC-SHA256 |
+| Bitácora y evidencias | Integridad | Cadena de HMAC y firma RSA-SHA256 |
 
 ### Cómo se cifra y descifra cada dato
 
@@ -202,8 +283,13 @@ usa para cifrar el valor directamente; en vez de eso:
 
 Esto evita el límite de tamaño de RSA (no se puede cifrar directamente texto
 largo con RSA-OAEP) y es la razón por la que el RUT ya no admite búsqueda por
-igualdad en SQL: para comparar dos RUTs hay que descifrarlos primero, no se
-puede hacer `WHERE rut = '...'` contra el valor cifrado.
+igualdad en SQL sobre el valor cifrado. Para detectar duplicados y para el login
+se guarda además un índice determinista (`rutHash`, `emailHash`): un HMAC-SHA256
+con `ENCRYPTION_KEY`, que permite comparar por igualdad sin poder revertirse.
+
+> Desde la Actividad 4 el RUT, el nombre, el celular y el correo ya no se guardan
+> en la base principal: allí solo hay seudónimos y el valor original cifrado con
+> este esquema híbrido vive en la bóveda (`BovedaSeudonimos`, base `monify_vault`).
 
 Genera una clave para desarrollo con:
 
@@ -222,43 +308,18 @@ openssl rsa -in rsa_private.pem -pubout -out rsa_public.pem
 
 Guarda su contenido PEM en `.env` como `RSA_PRIVATE_KEY` y `RSA_PUBLIC_KEY`
 (con los saltos de línea escapados como `\n`); tampoco los versiones ni los
-imprimas en logs. El seed SQL conserva su función de simulación, pero los
-registros creados directamente por SQL no pasan por `ServicioCifrado`; para
-datos simulados protegidos, créalos mediante los endpoints de la API o ejecuta
-un proceso de migración que cifre los registros existentes antes de usarlos.
+imprimas en logs. Los datos de desarrollo se generan con `pnpm run db:seed`,
+que usa los mismos servicios de la aplicación, así que también quedan
+seudonimizados y cifrados (no existe un seed SQL directo).
 
 ### Autenticación con JWT
 
-El login no cifra la contraseña, la compara: `ServicioHash.compare(...)`
-toma la contraseña recibida y el hash bcrypt guardado en
-`credencialesAutenticacion.contraseña`, y evalúa si coinciden sin necesitar
-nunca la contraseña original.
+`POST /auth/login` busca la cuenta por el HMAC del correo, compara la contraseña
+con bcrypt y firma un JWT (HS256, 1 hora) con `JWT_SECRET`. El token solo lleva
+el id, el tipo de cuenta y el rol, sin datos personales. En cada petición el
+guard global vuelve a leer la cuenta, así que un bloqueo, un cambio de rol o una
+eliminación aplican de inmediato. Tras 5 intentos fallidos la cuenta se bloquea
+y solo un Admin puede habilitarla.
 
-Flujo de `POST /auth/login`:
-1. El usuario envía `email` y `contraseña`.
-2. `ServicioHash.compare` valida la contraseña contra el hash almacenado.
-3. Si coincide, se firma un JWT con `JWT_SECRET` (algoritmo HS256), con un
-   payload mínimo (`sub` con el `idUsuario`, el rol, `iat` y `exp`) y una
-   expiración corta (por ejemplo 15 minutos).
-4. El token se devuelve al cliente, que lo adjunta en cada request protegido
-   con el header `Authorization: Bearer <token>`.
-5. Un guard (`JwtAuthGuard`) valida la firma y la expiración en cada endpoint
-   que lo requiera, antes de dejar pasar la request al controller.
-
-Genera la clave de firma para desarrollo con:
-
-```bash
-openssl rand -hex 32
-```
-
-Guárdala únicamente en `.env` como `JWT_SECRET`; no la versiones ni la
-imprimas en logs, igual que `ENCRYPTION_KEY` y el par RSA.
-
------
-
-### Panel web
-
-El panel de resumen está disponible en la ruta raíz del servidor. Inicia la API
-con `pnpm run desarrollo` y abre `http://localhost:3000`. El panel consulta los
-usuarios, billeteras, transacciones y deudas existentes; Bootstrap y las fuentes
-se cargan desde CDN.
+Genera la clave de firma para desarrollo con `openssl rand -hex 32` y guárdala
+únicamente en `.env`.

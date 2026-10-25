@@ -1,28 +1,39 @@
-import { Body, Controller, Get, Param, Patch, Post, Res } from '@nestjs/common';
-import type { Response } from 'express';
-import type { EstadoSolicitudCredito } from '../../tipos.js';
+import { BadRequestException, Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
+import type { ContextoCliente } from '../../utilidades/contexto-cliente';
+import type { EstadoSolicitudCredito, EstadoVerificacion } from '../../tipos';
+import { ContextoActual, MotivoAcceso, Permiso, SesionActual, SoloAutenticado } from '../autorizacion/decoradores';
+import { enteroOpcional } from '../autorizacion/alcance';
+import type { Sesion } from '../autorizacion/roles';
+import { ServicioAutorizacion } from '../autorizacion/servicio-autorizacion';
 import { ServicioOperacionesFinancieras } from './servicio-operaciones-financieras';
 
-interface DatosMonto {
-  usuarioId: string;
+interface DatosTransaccion {
+  tarjetaId: string | number;
+  tipo: 'abono' | 'cargo';
+  monto: number;
+  confirmacionNoRepudio?: unknown;
+}
+
+interface DatosDeuda {
+  usuarioId: string | number;
   monto: number;
 }
 
 interface DatosVerificacion {
-  usuarioId: string;
-  estado: 'pendiente' | 'en_revision' | 'verificada' | 'rechazada';
+  usuarioId: string | number;
+  estado: EstadoVerificacion;
   metodo?: string;
   fechaVerificacion?: string;
   fechaExpiracion?: string;
+  comprobante?: string;
 }
 
 interface DatosConsultaRiesgo {
-  usuarioId: string;
+  usuarioId: string | number;
   score?: number;
   morosidad: boolean;
-  tiempoDeMorosidad?: string;
-  cantidadDeuda?: number;
-  tiempoEnDeuda?: string;
+  diasMorosidad?: number;
+  diasEnDeuda?: number;
 }
 
 interface DatosCredito {
@@ -31,79 +42,168 @@ interface DatosCredito {
 }
 
 interface DatosSolicitud {
-  usuarioId: string;
-  creditoId: string;
+  creditoId: string | number;
   montoSolicitado: number;
+  aceptaEvaluacionCrediticia?: unknown;
+  confirmacionNoRepudio?: unknown;
 }
 
 interface DatosEstado {
   estado: EstadoSolicitudCredito;
+  confirmacionNoRepudio?: unknown;
+}
+
+function identificador(valor: unknown, nombre: string): number {
+  const numero = Number(valor);
+  if (valor === undefined || valor === null || valor === '' || !Number.isInteger(numero) || numero <= 0) {
+    throw new BadRequestException(`${nombre} es obligatorio y debe ser un entero positivo`);
+  }
+  return numero;
+}
+
+function fechaIso(valor: string | undefined, nombre: string): string | undefined {
+  if (valor === undefined) return undefined;
+  const fecha = new Date(valor);
+  if (Number.isNaN(fecha.getTime())) throw new BadRequestException(`${nombre} no es una fecha válida`);
+  return fecha.toISOString();
 }
 
 @Controller()
 export class ControladorOperacionesFinancieras {
-  constructor(private readonly servicio: ServicioOperacionesFinancieras) {}
+  constructor(
+    private readonly servicio: ServicioOperacionesFinancieras,
+    private readonly autorizacion: ServicioAutorizacion
+  ) {}
 
-  @Get('transacciones') listarTransacciones() { return this.servicio.listarTransacciones(); }
-
-  @Post('transacciones') async crearTransaccion(@Body() datos: DatosMonto, @Res() response: Response) {
-    const error = this.validarMonto(datos);
-    if (error) return response.status(400).json({ mensaje: error });
-    const transaccion = await this.servicio.crearTransaccion(datos.usuarioId.trim(), datos.monto);
-    return response.status(201).json(transaccion);
+  @Get('transacciones')
+  @Permiso('historial.ver')
+  async listarTransacciones(
+    @SesionActual() sesion: Sesion, @ContextoActual() contexto: ContextoCliente,
+    @MotivoAcceso() motivo: string | undefined, @Query('usuarioId') usuarioId?: string
+  ) {
+    const alcance = await this.autorizacion.alcance(sesion, 'historial.ver', { motivo, contexto });
+    return this.servicio.listarTransacciones(alcance, enteroOpcional(usuarioId, 'usuarioId'));
   }
 
-  @Get('deudas') listarDeudas() { return this.servicio.listarDeudas(); }
-
-  @Post('deudas') async crearDeuda(@Body() datos: DatosMonto, @Res() response: Response) {
-    const error = this.validarMonto(datos);
-    if (error) return response.status(400).json({ mensaje: error });
-    const deuda = await this.servicio.crearDeuda(datos.usuarioId.trim(), datos.monto);
-    return response.status(201).json(deuda);
+  @Post('transacciones')
+  @Permiso('transaccion.crear')
+  crearTransaccion(@SesionActual() sesion: Sesion, @Body() datos: DatosTransaccion, @ContextoActual() contexto: ContextoCliente) {
+    if (datos?.tipo !== 'abono' && datos?.tipo !== 'cargo') throw new BadRequestException("tipo debe ser 'abono' o 'cargo'");
+    return this.servicio.crearTransaccion(sesion, { tarjetaId: identificador(datos.tarjetaId, 'tarjetaId'), tipo: datos.tipo, monto: datos.monto }, datos.confirmacionNoRepudio, contexto);
   }
 
-  @Get('verificaciones-identidad') listarVerificaciones() { return this.servicio.listarVerificaciones(); }
-
-  @Post('verificaciones-identidad') async crearVerificacion(@Body() datos: DatosVerificacion, @Res() response: Response) {
-    if (!datos.usuarioId?.trim() || !datos.estado) return response.status(400).json({ mensaje: 'usuarioId y estado son obligatorios' });
-    const verificacion = await this.servicio.crearVerificacion({ ...datos, usuarioId: datos.usuarioId.trim() });
-    return response.status(201).json(verificacion);
+  @Get('deudas')
+  @Permiso('deuda.ver')
+  async listarDeudas(
+    @SesionActual() sesion: Sesion, @ContextoActual() contexto: ContextoCliente,
+    @MotivoAcceso() motivo: string | undefined, @Query('usuarioId') usuarioId?: string
+  ) {
+    const alcance = await this.autorizacion.alcance(sesion, 'deuda.ver', { motivo, contexto });
+    return this.servicio.listarDeudas(alcance, enteroOpcional(usuarioId, 'usuarioId'));
   }
 
-  @Get('consultas-riesgo') listarConsultasRiesgo() { return this.servicio.listarConsultasRiesgo(); }
-
-  @Post('consultas-riesgo') async crearConsultaRiesgo(@Body() datos: DatosConsultaRiesgo, @Res() response: Response) {
-    if (!datos.usuarioId?.trim() || typeof datos.morosidad !== 'boolean') return response.status(400).json({ mensaje: 'usuarioId y morosidad son obligatorios' });
-    const consulta = await this.servicio.crearConsultaRiesgo({ ...datos, usuarioId: datos.usuarioId.trim() });
-    return response.status(201).json(consulta);
+  @Post('deudas')
+  @Permiso('riesgo.registrar')
+  crearDeuda(@Body() datos: DatosDeuda) {
+    return this.servicio.crearDeuda(identificador(datos?.usuarioId, 'usuarioId'), datos.monto);
   }
 
-  @Get('creditos') listarCreditos() { return this.servicio.listarCreditos(); }
-
-  @Post('creditos') async crearCredito(@Body() datos: DatosCredito, @Res() response: Response) {
-    if (!this.esNumeroPositivo(datos.monto) || !this.esNumeroNoNegativo(datos.tasaInteres)) return response.status(400).json({ mensaje: 'monto y tasaInteres deben ser números válidos' });
-    const credito = await this.servicio.crearCredito(datos.monto, datos.tasaInteres);
-    return response.status(201).json(credito);
+  @Get('verificaciones-identidad')
+  @Permiso('kyc.ver')
+  async listarVerificaciones(
+    @SesionActual() sesion: Sesion, @ContextoActual() contexto: ContextoCliente,
+    @MotivoAcceso() motivo: string | undefined, @Query('usuarioId') usuarioId?: string
+  ) {
+    const alcance = await this.autorizacion.alcance(sesion, 'kyc.ver', { motivo, contexto });
+    return this.servicio.listarVerificaciones(alcance, enteroOpcional(usuarioId, 'usuarioId'));
   }
 
-  @Get('solicitudes-credito') listarSolicitudes() { return this.servicio.listarSolicitudes(); }
-
-  @Post('solicitudes-credito') async crearSolicitud(@Body() datos: DatosSolicitud, @Res() response: Response) {
-    if (!datos.usuarioId?.trim() || !datos.creditoId?.trim() || !this.esNumeroPositivo(datos.montoSolicitado)) return response.status(400).json({ mensaje: 'usuarioId, creditoId y montoSolicitado son obligatorios' });
-    const solicitud = await this.servicio.crearSolicitud(datos.usuarioId.trim(), datos.creditoId.trim(), datos.montoSolicitado);
-    return response.status(201).json(solicitud);
+  @Post('verificaciones-identidad')
+  @Permiso('kyc.registrar')
+  crearVerificacion(@Body() datos: DatosVerificacion) {
+    if (!datos?.estado) throw new BadRequestException('usuarioId y estado son obligatorios');
+    return this.servicio.crearVerificacion({
+      usuarioId: identificador(datos.usuarioId, 'usuarioId'), estado: datos.estado, metodo: datos.metodo,
+      fechaVerificacion: fechaIso(datos.fechaVerificacion, 'fechaVerificacion'),
+      fechaExpiracion: fechaIso(datos.fechaExpiracion, 'fechaExpiracion'), comprobante: datos.comprobante
+    });
   }
 
-  @Patch('solicitudes-credito/:id/estado') actualizarEstado(@Param('id') id: string, @Body() datos: DatosEstado) {
-    return this.servicio.actualizarEstadoSolicitud(id, datos.estado);
+  @Get('consultas-riesgo')
+  @Permiso('info_financiera.ver')
+  async listarConsultasRiesgo(
+    @SesionActual() sesion: Sesion, @ContextoActual() contexto: ContextoCliente,
+    @MotivoAcceso() motivo: string | undefined, @Query('usuarioId') usuarioId?: string
+  ) {
+    const alcance = await this.autorizacion.alcance(sesion, 'info_financiera.ver', { motivo, contexto });
+    return this.servicio.listarConsultasRiesgo(alcance, enteroOpcional(usuarioId, 'usuarioId'));
   }
 
-  private validarMonto(datos: DatosMonto): string | undefined {
-    if (!datos.usuarioId?.trim()) return 'usuarioId es obligatorio';
-    if (!this.esNumeroPositivo(datos.monto)) return 'monto debe ser un número mayor que cero';
-    return undefined;
+  @Post('consultas-riesgo')
+  @Permiso('riesgo.registrar')
+  crearConsultaRiesgo(@Body() datos: DatosConsultaRiesgo) {
+    if (typeof datos?.morosidad !== 'boolean') throw new BadRequestException('usuarioId y morosidad son obligatorios');
+    return this.servicio.crearConsultaRiesgo({
+      usuarioId: identificador(datos.usuarioId, 'usuarioId'), score: datos.score, morosidad: datos.morosidad,
+      diasMorosidad: datos.diasMorosidad, diasEnDeuda: datos.diasEnDeuda
+    });
   }
 
-  private esNumeroPositivo(valor: number): boolean { return typeof valor === 'number' && Number.isFinite(valor) && valor > 0; }
-  private esNumeroNoNegativo(valor: number): boolean { return typeof valor === 'number' && Number.isFinite(valor) && valor >= 0; }
+  @Get('informacion-financiera')
+  @Permiso('info_financiera.ver')
+  async informacionFinanciera(
+    @SesionActual() sesion: Sesion, @ContextoActual() contexto: ContextoCliente,
+    @MotivoAcceso() motivo: string | undefined, @Query('usuarioId') usuarioId?: string
+  ) {
+    const titular = enteroOpcional(usuarioId, 'usuarioId') ?? (sesion.rol === 'usuario' ? sesion.id : undefined);
+    if (titular === undefined) throw new BadRequestException('usuarioId es obligatorio');
+    await this.autorizacion.exigirAcceso(sesion, 'info_financiera.ver', titular, { motivo, contexto });
+    return this.servicio.informacionFinanciera(titular);
+  }
+
+  @Get('creditos')
+  @SoloAutenticado('creditos.listar')
+  listarCreditos() {
+    return this.servicio.listarCreditos();
+  }
+
+  @Post('creditos')
+  @Permiso('credito.gestionar')
+  crearCredito(@Body() datos: DatosCredito) {
+    if (typeof datos?.monto !== 'number' || !Number.isFinite(datos.monto) || datos.monto <= 0
+      || typeof datos.tasaInteres !== 'number' || !Number.isFinite(datos.tasaInteres) || datos.tasaInteres < 0) {
+      throw new BadRequestException('monto y tasaInteres deben ser números válidos');
+    }
+    return this.servicio.crearCredito(datos.monto, datos.tasaInteres);
+  }
+
+  @Get('solicitudes-credito')
+  @Permiso('solicitud_credito.ver')
+  async listarSolicitudes(
+    @SesionActual() sesion: Sesion, @ContextoActual() contexto: ContextoCliente,
+    @MotivoAcceso() motivo: string | undefined, @Query('usuarioId') usuarioId?: string
+  ) {
+    const alcance = await this.autorizacion.alcance(sesion, 'solicitud_credito.ver', { motivo, contexto });
+    return this.servicio.listarSolicitudes(alcance, enteroOpcional(usuarioId, 'usuarioId'));
+  }
+
+  @Post('solicitudes-credito')
+  @Permiso('solicitud_credito.crear')
+  crearSolicitud(@SesionActual() sesion: Sesion, @Body() datos: DatosSolicitud, @ContextoActual() contexto: ContextoCliente) {
+    return this.servicio.crearSolicitud(
+      sesion,
+      { creditoId: identificador(datos?.creditoId, 'creditoId'), montoSolicitado: datos?.montoSolicitado, aceptaEvaluacionCrediticia: datos?.aceptaEvaluacionCrediticia },
+      datos?.confirmacionNoRepudio, contexto
+    );
+  }
+
+  @Patch('solicitudes-credito/:id/estado')
+  @Permiso('solicitud_credito.aprobar')
+  async actualizarEstado(
+    @SesionActual() sesion: Sesion, @ContextoActual() contexto: ContextoCliente, @MotivoAcceso() motivo: string | undefined,
+    @Param('id', ParseIntPipe) id: number, @Body() datos: DatosEstado
+  ) {
+    await this.autorizacion.alcance(sesion, 'solicitud_credito.aprobar', { motivo, contexto });
+    return this.servicio.resolverSolicitud(sesion, id, datos?.estado, datos?.confirmacionNoRepudio, contexto);
+  }
 }

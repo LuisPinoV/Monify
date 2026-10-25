@@ -11,10 +11,10 @@
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:reset": "docker compose down -v && docker compose up -d",
-    "db:seed": "docker compose exec -T db psql -f /docker-entrypoint-initdb.d/10-seed.sql",
-    "db:recrear-cifrados": "node scripts/recrear-datos-cifrados.js",
+    "db:seed": "nest build && node dist/semilla.js",
     "db:psql": "docker compose exec db psql",
-    "db:logs": "docker compose logs -f db"
+    "db:logs": "docker compose logs -f db",
+    "prueba:humo": "node scripts/prueba-humo.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.11",

@@ -1,5 +1,6 @@
-import { Body, Controller, Post, Res } from '@nestjs/common';
-import type { Response } from 'express';
+import { BadRequestException, Body, Controller, HttpCode, Post } from '@nestjs/common';
+import type { ContextoCliente } from '../../utilidades/contexto-cliente';
+import { ContextoActual } from '../autorizacion/decoradores';
 import { Publica } from './publico.decorador';
 import { ServicioAutenticacion } from './servicio-autenticacion';
 
@@ -11,10 +12,11 @@ export class ControladorAutenticacion {
 
   @Publica()
   @Post('login')
-  async login(@Body() datos: DatosLogin, @Res() response: Response) {
-    if (!datos.correo?.trim() || !datos.contrasena) {
-      return response.status(400).json({ mensaje: 'correo y contrasena son obligatorios' });
+  @HttpCode(200)
+  login(@Body() datos: DatosLogin, @ContextoActual() contexto: ContextoCliente) {
+    if (typeof datos?.correo !== 'string' || !datos.correo.trim() || typeof datos.contrasena !== 'string' || !datos.contrasena) {
+      throw new BadRequestException('correo y contrasena son obligatorios');
     }
-    return response.json(await this.servicio.iniciarSesion(datos.correo.trim(), datos.contrasena));
+    return this.servicio.iniciarSesion(datos.correo, datos.contrasena, contexto);
   }
 }

@@ -1,3 +1,5 @@
+import type { Rol, TipoCuenta } from './modulos/autorizacion/roles';
+
 export type Identificador = string;
 
 export type EstadoVerificacion =
@@ -12,32 +14,59 @@ export type EstadoSolicitudCredito =
   | 'aprobada'
   | 'rechazada';
 
-export interface Usuario {
+// Perfil completo: solo lo recibe su titular (los datos originales se recuperan de la bóveda).
+export interface PerfilCuenta {
   id: Identificador;
-  tipoUsuario: string;
+  cuenta: TipoCuenta;
+  rol: Rol;
   nombre: string;
   rut: string;
-  fechaNacimiento: string;
-  saldo: number;
-  rentaMensual?: number;
-  numeroCelular?: string;
   correo: string;
+  numeroCelular?: string;
+  esMayorEdad?: boolean;
+  tramoRenta?: string;
+  tramoRentaEtiqueta?: string;
+  bloqueada: boolean;
   creadoEn: string;
 }
 
-export interface Billetera {
+// Vista para el personal: solo seudónimos y banderas, sin datos personales ni financieros.
+export interface ResumenCuenta {
   id: Identificador;
-  usuarioId: Identificador;
+  cuenta: TipoCuenta;
+  rol: Rol;
+  nombre: string;
+  bloqueada: boolean;
+  estadoCuenta: string;
+  creadoEn: string;
+}
+
+export interface TarjetaVista {
+  id: Identificador;
+  bancoId: Identificador;
+  banco: string;
+  numeroEnmascarado: string;
   saldo: number;
 }
 
-export interface Transferencia {
+export interface Billetera {
+  usuarioId: Identificador;
+  saldo: number;
+  tarjetas: TarjetaVista[];
+}
+
+export interface Banco {
   id: Identificador;
-  billeteraOrigenId: Identificador;
-  billeteraDestinoId: Identificador;
+  nombre: string;
+}
+
+export interface Transaccion {
+  id: Identificador;
+  usuarioId: Identificador;
+  tarjetaId: Identificador;
   monto: number;
-  estado: 'creada';
   creadaEn: string;
+  evidenciaId?: string;
 }
 
 export interface SolicitudCredito {
@@ -47,13 +76,8 @@ export interface SolicitudCredito {
   montoSolicitado: number;
   estado: EstadoSolicitudCredito;
   creadaEn: string;
-}
-
-export interface Transaccion {
-  id: Identificador;
-  usuarioId: Identificador;
-  monto: number;
-  creadaEn: string;
+  evidenciaId?: string;
+  evidenciaResolucionId?: string;
 }
 
 export interface Deuda {
@@ -70,17 +94,18 @@ export interface CasoVerificacion {
   metodo?: string;
   fechaVerificacion?: string;
   fechaExpiracion?: string;
-  creadoEn: string;
 }
 
+// Los tiempos se guardan por tramos y no existe el monto de deuda (minimización).
 export interface ConsultaRiesgo {
   id: Identificador;
   usuarioId: Identificador;
   score?: number;
   morosidad: boolean;
   tiempoDeMorosidad?: string;
-  cantidadDeuda?: number;
+  tiempoDeMorosidadEtiqueta?: string;
   tiempoEnDeuda?: string;
+  tiempoEnDeudaEtiqueta?: string;
   consultadaEn: string;
 }
 

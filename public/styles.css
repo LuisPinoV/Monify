@@ -284,3 +284,42 @@ h2 { font-size: 16px; font-weight: 700; margin: 0; }
 @media (max-width: 1100px) {
   .content-grid-form { grid-template-columns: minmax(0, 1fr); }
 }
+/* ---------------------------------------------------------------- Actividad 4: TOS, no repudio y RBAC */
+.auth-wrapper { width: min(460px, 100%); display: flex; flex-direction: column; gap: 12px; }
+.auth-tabs { margin-bottom: 0; }
+.login-screen { overflow-y: auto; padding: 32px 16px; }
+.login-card.tab-panel { display: none; }
+.login-card.tab-panel.active { display: grid; }
+.confirmacion { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--canvas); display: flex; flex-direction: column; gap: 8px; }
+.confirmacion .field.checkbox-field span { line-height: 1.4; }
+.confirmacion-nota { color: var(--muted); font-size: 12px; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(32, 44, 41, 0.45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+.modal-card { background: var(--paper); border-radius: 18px; width: min(760px, 100%); max-height: 90vh; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+.terminos-contenido h3 { font-family: 'Manrope', sans-serif; font-size: 15px; font-weight: 700; margin: 18px 0 6px; }
+.terminos-contenido li { margin-bottom: 6px; line-height: 1.5; }
+.session-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 12px; background: var(--paper); }
+.session-name { font-weight: 600; word-break: break-all; }
+.role-chip { align-self: flex-start; background: var(--mint); color: var(--green-dark); border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 700; }
+.topbar-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.motivo-field { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.motivo-field input { border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; min-width: 240px; }
+.regla { border-radius: 999px; padding: 2px 8px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.regla-denegado { background: var(--coral); color: #8a3b22; }
+.regla-propio { background: var(--blue); color: #2d4f73; }
+.regla-permitido { background: var(--mint); color: var(--green-dark); }
+.regla-necesidad, .regla-autorizacion { background: var(--yellow); color: #7a5d00; }
+.acciones-fila { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn-mini { border: 1px solid var(--line); background: var(--paper); border-radius: 8px; padding: 3px 8px; font-size: 12px; }
+.btn-mini:hover { background: var(--canvas); }
+.btn-peligro { background: #b4432b; border-color: #b4432b; color: #fff; }
+.btn-peligro:hover { background: #963722; color: #fff; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.integridad { padding: 12px 14px; border-radius: 12px; }
+.integridad-ok { background: var(--mint); color: var(--green-dark); }
+.integridad-error { background: var(--coral); color: #8a3b22; }
+.page > .content-grid + .content-grid, .page > .panel + .content-grid, .page > .content-grid + .panel { margin-top: 18px; }
+@media (max-width: 720px) { .motivo-field input { min-width: 0; width: 100%; } .motivo-field { width: 100%; } }
+.filtro-inline { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 18px; }
+.filtro-inline .field { min-width: 160px; }
+.d-none { display: none !important; }
+.content-grid > :only-child { grid-column: 1 / -1; }

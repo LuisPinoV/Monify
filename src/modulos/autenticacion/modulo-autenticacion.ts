@@ -2,8 +2,6 @@ import { Global, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { BaseDatos } from '../../base-datos';
-import { ServicioHash } from '../../seguridad/servicio-hash';
 import { ControladorAutenticacion } from './controlador-autenticacion';
 import { GuardJwt } from './guard-jwt';
 import { ServicioAutenticacion } from './servicio-autenticacion';

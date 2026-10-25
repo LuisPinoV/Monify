@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createCipheriv, createDecipheriv, createHmac, privateDecrypt, publicEncrypt, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, createSign, createVerify, privateDecrypt, publicEncrypt, randomBytes } from 'node:crypto';
 
 export interface ValorCifrado {
   ciphertext: string;
@@ -102,6 +102,19 @@ export class ServicioCifrado {
   // Índice de búsqueda determinista (HMAC), para detectar duplicados sin poder revertirlo al valor original.
   hashDeterminista(value: string): string {
     return createHmac('sha256', this.clave).update(value, 'utf8').digest('hex');
+  }
+
+  // Firma RSA-SHA256 con la clave privada: sirve como evidencia de no repudio verificable con la clave pública.
+  firmar(mensaje: string): string {
+    return createSign('RSA-SHA256').update(mensaje, 'utf8').sign(this.clavePrivada, 'base64');
+  }
+
+  verificarFirma(mensaje: string, firma: string): boolean {
+    try {
+      return createVerify('RSA-SHA256').update(mensaje, 'utf8').verify(this.clavePublica, firma, 'base64');
+    } catch {
+      return false;
+    }
   }
 
   decryptPacked(value: string | null): string | null {

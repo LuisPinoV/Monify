@@ -14,7 +14,8 @@
     "db:seed": "nest build && node dist/semilla.js",
     "db:psql": "docker compose exec db psql",
     "db:logs": "docker compose logs -f db",
-    "prueba:humo": "node scripts/prueba-humo.js"
+    "prueba:humo": "node scripts/prueba-humo.js",
+    "prueba:seguridad": "node scripts/pruebas-seguridad.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.11",

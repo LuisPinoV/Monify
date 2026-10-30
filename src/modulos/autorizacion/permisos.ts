@@ -34,10 +34,11 @@ export const ACCIONES = [
   'riesgo.registrar',
   'kyc.ver',
   'kyc.registrar',
-  'cuenta.eliminar',
   'consentimiento.gestionar',
-  'datos.exportar',
-  'autorizacion.gestionar'
+  'autorizacion.gestionar',
+  // Actividad 5: ejercicio de derechos (acceso y portabilidad, rectificación, supresión)
+  'derechos.ejercer',
+  'derechos.supervisar'
 ] as const;
 export type Accion = (typeof ACCIONES)[number];
 
@@ -70,10 +71,11 @@ export const MATRIZ_PERMISOS: Record<Accion, Fila> = {
   'riesgo.registrar':          fila('denegado', 'denegado', 'permitido', 'denegado', 'denegado'),
   'kyc.ver':                   fila('denegado', 'propio', 'permitido', 'denegado', 'necesidad'),
   'kyc.registrar':             fila('denegado', 'denegado', 'permitido', 'denegado', 'permitido'),
-  'cuenta.eliminar':           fila('denegado', 'propio', 'denegado', 'denegado', 'denegado'),
   'consentimiento.gestionar':  fila('denegado', 'propio', 'denegado', 'denegado', 'denegado'),
-  'datos.exportar':            fila('denegado', 'propio', 'denegado', 'denegado', 'denegado'),
-  'autorizacion.gestionar':    fila('denegado', 'propio', 'denegado', 'permitido', 'denegado')
+  'autorizacion.gestionar':    fila('denegado', 'propio', 'denegado', 'permitido', 'denegado'),
+  // Solo el propio titular ejerce sus derechos; el Admin y el Auditor supervisan los plazos sin ver los datos pedidos.
+  'derechos.ejercer':          fila('denegado', 'propio', 'denegado', 'denegado', 'denegado'),
+  'derechos.supervisar':       fila('permitido', 'denegado', 'denegado', 'permitido', 'denegado')
 };
 
 export const AMBITO_POR_ACCION: Partial<Record<Accion, AmbitoAutorizacion>> = {

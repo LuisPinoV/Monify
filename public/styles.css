@@ -323,3 +323,19 @@ h2 { font-size: 16px; font-weight: 700; margin: 0; }
 .filtro-inline .field { min-width: 160px; }
 .d-none { display: none !important; }
 .content-grid > :only-child { grid-column: 1 / -1; }
+
+/* Actividad 5: consentimiento y derechos */
+.confirmacion-titulo { font-size: 13px; }
+.acciones-modal { display: flex; flex-wrap: wrap; gap: 10px; }
+.acciones-modal .btn { flex: 1 1 180px; }
+.badge-otorgado, .badge-ejecutada, .badge-verificada { background: var(--mint); color: var(--green-dark); }
+.badge-revocado, .badge-rechazado { background: var(--coral); color: #a2432a; }
+.badge-reemplazado, .badge-cerrada, .badge-desistida { background: var(--line); color: var(--muted); }
+.flujo { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+.flujo .paso { background: var(--canvas); border: 1px solid var(--line); border-radius: 10px; padding: 3px 8px; color: var(--ink); }
+.flujo .paso small { color: var(--muted); margin-left: 4px; }
+.respuesta-derecho { font-size: 12px; color: var(--ink); max-width: 420px; white-space: normal; }
+.aviso-consentimiento { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+.codigo-desarrollo { font-family: ui-monospace, monospace; background: var(--yellow); border-radius: 6px; padding: 2px 6px; }
+.campos-rectificacion { display: contents; }
+#terminos-modal { z-index: 60; }

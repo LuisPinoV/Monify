@@ -62,3 +62,11 @@ export class BaseDatos implements Ejecutor, OnModuleInit, OnModuleDestroy {
     throw new Error('No se encontró el esquema SQL en db/init/01-monify_schema.sql');
   }
 }
+// Declara dentro de la transacción quién actúa y desde qué canal/dispositivo; los triggers de
+// consentimientos y de solicitudes de derechos lo copian a sus logs (fuera de la API queda "bd_directa").
+export async function fijarContexto(ejecutor: Ejecutor, valores: { canal?: string; dispositivo?: string; actor?: string }): Promise<void> {
+  await ejecutor.consultar(
+    `SELECT set_config('monify.canal', $1, true), set_config('monify.dispositivo', $2, true), set_config('monify.actor', $3, true)`,
+    [valores.canal ?? '', valores.dispositivo ?? '', valores.actor ?? '']
+  );
+}

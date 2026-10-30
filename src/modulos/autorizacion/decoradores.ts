@@ -5,6 +5,7 @@ import { contextoDesdeEncabezados, motivoDesdeEncabezados, type ContextoCliente 
 
 export const PERMISO = 'monify.permiso';
 export const SOLO_AUTENTICADO = 'monify.soloAutenticado';
+export const SIN_CONSENTIMIENTO = 'monify.sinConsentimiento';
 
 // Exige que el rol de la sesión tenga la acción habilitada en la matriz RBAC.
 export const Permiso = (accion: Accion) => SetMetadata(PERMISO, accion);
@@ -12,6 +13,10 @@ export const Permiso = (accion: Accion) => SetMetadata(PERMISO, accion);
 // Cualquier cuenta autenticada, sin una acción RBAC específica (por ejemplo, operar sobre su propio perfil).
 // El nombre identifica la acción en la bitácora de auditoría.
 export const SoloAutenticado = (nombreAccion: string) => SetMetadata(SOLO_AUTENTICADO, nombreAccion);
+
+// Excepción a la regla de consentimiento: el titular puede usar el endpoint aunque le falte un consentimiento
+// (gestión de consentimientos y ejercicio de derechos, Actividad 5). El resto queda bloqueado.
+export const SinConsentimiento = () => SetMetadata(SIN_CONSENTIMIENTO, true);
 
 interface SolicitudAutenticada {
   sesion?: Sesion;

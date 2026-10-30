@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Header, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
 import type { ContextoCliente } from '../../utilidades/contexto-cliente';
 import { Publica } from '../autenticacion/publico.decorador';
 import { ServicioAuditoria } from '../auditoria/servicio-auditoria';
@@ -6,27 +6,13 @@ import { ContextoActual, MotivoAcceso, Permiso, SesionActual, SoloAutenticado } 
 import type { Sesion } from '../autorizacion/roles';
 import { ServicioAutorizacion } from '../autorizacion/servicio-autorizacion';
 import { ServicioUsuarios, type DatosCuenta } from './servicio-usuarios';
+import type { AceptacionFinalidades } from '../terminos/servicio-consentimientos';
 
-interface DatosRegistro extends Partial<DatosCuenta> {
-  versionTerminos?: string;
-  aceptaTerminos?: unknown;
-  aceptaTratamientoDatos?: unknown;
-}
-
-interface DatosPerfil {
-  nombre?: string;
-  numeroCelular?: string;
-  rentaMensual?: number;
-}
+interface DatosRegistro extends Partial<DatosCuenta>, AceptacionFinalidades {}
 
 interface DatosBloqueo {
   bloqueado: boolean;
   cuenta?: 'usuario' | 'administrador_riesgo';
-}
-
-interface DatosEliminacion {
-  contrasena?: string;
-  confirmacionNoRepudio?: unknown;
 }
 
 @Controller('usuarios')
@@ -56,25 +42,8 @@ export class ControladorUsuarios {
     return this.servicio.obtenerPerfil(sesion);
   }
 
-  @Patch('me')
-  @Permiso('perfil.actualizar')
-  actualizarPerfil(@SesionActual() sesion: Sesion, @Body() datos: DatosPerfil) {
-    return this.servicio.actualizarPerfil(sesion, datos ?? {});
-  }
-
-  @Delete('me')
-  @Permiso('cuenta.eliminar')
-  eliminar(@SesionActual() sesion: Sesion, @Body() datos: DatosEliminacion, @ContextoActual() contexto: ContextoCliente) {
-    return this.servicio.eliminarCuenta(sesion, datos ?? {}, contexto);
-  }
-
-  // Portabilidad: el titular descarga todos sus datos.
-  @Get('me/exportar')
-  @Permiso('datos.exportar')
-  @Header('Content-Disposition', 'attachment; filename="monify-mis-datos.json"')
-  exportar(@SesionActual() sesion: Sesion) {
-    return this.servicio.exportarDatos(sesion);
-  }
+  // La rectificación, la copia de los datos (acceso y portabilidad) y la eliminación de la cuenta (supresión)
+  // ya no son endpoints directos: se piden como solicitudes en el módulo de derechos (/derechos).
 
   // Auditoría: cada persona ve el registro de sus propias acciones.
   @Get('me/actividad')

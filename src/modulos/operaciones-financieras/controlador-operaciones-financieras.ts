@@ -44,7 +44,6 @@ interface DatosCredito {
 interface DatosSolicitud {
   creditoId: string | number;
   montoSolicitado: number;
-  aceptaEvaluacionCrediticia?: unknown;
   confirmacionNoRepudio?: unknown;
 }
 
@@ -192,7 +191,7 @@ export class ControladorOperacionesFinancieras {
   crearSolicitud(@SesionActual() sesion: Sesion, @Body() datos: DatosSolicitud, @ContextoActual() contexto: ContextoCliente) {
     return this.servicio.crearSolicitud(
       sesion,
-      { creditoId: identificador(datos?.creditoId, 'creditoId'), montoSolicitado: datos?.montoSolicitado, aceptaEvaluacionCrediticia: datos?.aceptaEvaluacionCrediticia },
+      { creditoId: identificador(datos?.creditoId, 'creditoId'), montoSolicitado: datos?.montoSolicitado },
       datos?.confirmacionNoRepudio, contexto
     );
   }

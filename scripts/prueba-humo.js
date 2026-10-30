@@ -27,6 +27,17 @@ async function login(correo, contrasena) {
 
 function paso(nombre) { console.log(`✓ ${nombre}`); }
 
+// Solicitud de derechos completa: recepción + verificación de identidad (contraseña y, si corresponde, código de desarrollo).
+async function ejercerDerecho(token, cuerpo, contrasena) {
+  const creada = await api('POST', '/derechos/solicitudes', { token, cuerpo });
+  assert.equal(creada.estado, 201, JSON.stringify(creada.datos));
+  const r = await api('POST', `/derechos/solicitudes/${creada.datos.solicitud.id}/verificar`, {
+    token, cuerpo: { contrasena, codigo: creada.datos.verificacion.codigoDesarrollo }
+  });
+  assert.equal(r.estado, 200, JSON.stringify(r.datos));
+  return r.datos.solicitud;
+}
+
 (async () => {
   assert.ok(ADMIN.correo && ADMIN.contrasena, 'define ADMIN_CORREO y ADMIN_CONTRASENA');
   const { version } = (await api('GET', '/terminos')).datos;
@@ -35,14 +46,14 @@ function paso(nombre) { console.log(`✓ ${nombre}`); }
   const datos = { nombre: 'Titular de Prueba', correo, rut: `${sufijo}-K`, fechaNacimiento: '1990-05-10', rentaMensual: 850000, numeroCelular: '+56911112222', contrasena: 'ClaveTitular1' };
   let r = await api('POST', '/usuarios', { cuerpo: datos });
   assert.equal(r.estado, 400, 'el registro sin aceptar el TOS debe fallar');
-  r = await api('POST', '/usuarios', { cuerpo: { ...datos, versionTerminos: version, aceptaTerminos: true, aceptaTratamientoDatos: true } });
+  r = await api('POST', '/usuarios', { cuerpo: { ...datos, versionTerminos: version, aceptaTerminos: true, aceptaTratamientoDatos: true, aceptaEvaluacionCrediticia: true } });
   assert.equal(r.estado, 201, JSON.stringify(r.datos));
   assert.equal(r.datos.tramoRenta, 'T2');
   paso('registro exige TOS; renta guardada como tramo');
 
   const titular = await login(correo, datos.contrasena);
   const t = titular.accessToken;
-  assert.equal(titular.requiereAceptarTerminos, false);
+  assert.equal(titular.requiereConsentimiento, false);
 
   const bancos = (await api('GET', '/bancos', { token: t })).datos;
   const tarjeta = (await api('POST', '/tarjetas', { token: t, cuerpo: { bancoId: bancos[0].id, numeroTarjeta: '4111111111111111' } })).datos;
@@ -54,9 +65,10 @@ function paso(nombre) { console.log(`✓ ${nombre}`); }
   assert.ok(r.datos.evidenciaId);
   paso('transacción exige casilla de no repudio y guarda evidencia');
 
-  r = await api('DELETE', '/usuarios/me', { token: t, cuerpo: { contrasena: datos.contrasena, confirmacionNoRepudio: true } });
-  assert.equal(r.estado, 409, 'no se puede cerrar la cuenta con saldo');
-  paso('cierre de cuenta bloqueado con saldo distinto de $0');
+  let solicitud = await ejercerDerecho(t, { tipo: 'supresion', confirmacionNoRepudio: true }, datos.contrasena);
+  assert.equal(solicitud.resultado, 'rechazada', 'no se puede suprimir la cuenta con saldo');
+  assert.match(solicitud.respuesta, /saldo/);
+  paso('supresión rechazada con respuesta fundamentada mientras el saldo no sea $0');
 
   const admin = (await login(ADMIN.correo, ADMIN.contrasena)).accessToken;
   r = await api('GET', '/billeteras', { token: admin });
@@ -84,13 +96,15 @@ function paso(nombre) { console.log(`✓ ${nombre}`); }
 
   r = await api('POST', '/transacciones', { token: t, cuerpo: { tarjetaId: tarjeta.id, tipo: 'cargo', monto: 5000, confirmacionNoRepudio: true } });
   assert.equal(r.estado, 201);
-  r = await api('GET', '/usuarios/me/exportar', { token: t });
-  assert.equal(r.datos.cuenta.correo, correo);
-  assert.ok(r.datos.transacciones.length === 2);
-  paso('portabilidad: exportación completa de datos propios');
+  solicitud = await ejercerDerecho(t, { tipo: 'acceso' }, datos.contrasena);
+  assert.equal(solicitud.estado, 'ejecutada');
+  r = await api('GET', `/derechos/solicitudes/${solicitud.id}/descarga`, { token: t });
+  assert.equal(r.datos.datos.titular.correo, correo);
+  assert.ok(r.datos.datos.transacciones.length === 2);
+  paso('acceso y portabilidad: copia JSON de los datos propios tras verificar la identidad');
 
-  r = await api('DELETE', '/usuarios/me', { token: t, cuerpo: { contrasena: datos.contrasena, confirmacionNoRepudio: true } });
-  assert.equal(r.estado, 200, JSON.stringify(r.datos));
+  solicitud = await ejercerDerecho(t, { tipo: 'supresion', confirmacionNoRepudio: true }, datos.contrasena);
+  assert.equal(solicitud.resultado, 'ejecutada', JSON.stringify(solicitud));
   r = await api('POST', '/auth/login', { cuerpo: { correo, contrasena: datos.contrasena } });
   assert.equal(r.estado, 401);
   paso('cuenta eliminada con saldo $0 y datos anonimizados');

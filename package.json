@@ -15,7 +15,8 @@
     "db:psql": "docker compose exec db psql",
     "db:logs": "docker compose logs -f db",
     "prueba:humo": "node scripts/prueba-humo.js",
-    "prueba:seguridad": "node scripts/pruebas-seguridad.js"
+    "prueba:seguridad": "node scripts/pruebas-seguridad.js",
+    "prueba:actividad5": "node --env-file=.env scripts/pruebas-actividad5.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.11",

@@ -43,9 +43,11 @@
           <label class="field"><span>Celular (opcional)</span><input type="text" name="numeroCelular"></label>
           <label class="field"><span>Contraseña (mínimo 8 caracteres)</span><input type="password" name="contrasena" minlength="8" required autocomplete="new-password"></label>
           <div class="confirmacion">
+            <strong class="confirmacion-titulo">Consentimientos (todos obligatorios, uno por finalidad)</strong>
             <label class="field checkbox-field"><input type="checkbox" name="aceptaTerminos" required><span>He leído y acepto los <a href="#" data-ver-terminos>Términos y Condiciones</a> (versión <span class="version-terminos">—</span>).</span></label>
-            <label class="field checkbox-field"><input type="checkbox" name="aceptaTratamientoDatos" required><span>Autorizo el tratamiento de mis datos personales para las finalidades descritas en los términos.</span></label>
-            <small class="confirmacion-nota">Tu aceptación queda registrada con fecha, canal y dispositivo como evidencia de no repudio.</small>
+            <label class="field checkbox-field"><input type="checkbox" name="aceptaTratamientoDatos" required><span>Autorizo el tratamiento de mis datos personales para operar la cuenta, verificar mi identidad y cumplir obligaciones legales.</span></label>
+            <label class="field checkbox-field"><input type="checkbox" name="aceptaEvaluacionCrediticia" required><span>Autorizo la evaluación de mi riesgo crediticio, incluida la consulta a una central de riesgo.</span></label>
+            <small class="confirmacion-nota">Cada consentimiento queda registrado por separado con su finalidad, versión, fecha, canal y dispositivo. Puedes revocarlos cuando quieras.</small>
           </div>
           <button class="btn btn-primary" type="submit">Crear cuenta</button>
         </form>
@@ -60,12 +62,25 @@
           <button class="btn btn-refresh" type="button" data-cerrar-modal>Cerrar</button>
         </div>
         <div class="terminos-contenido" id="terminos-contenido"></div>
-        <form class="form-grid d-none" id="aceptar-terminos-form">
+      </div>
+    </div>
+
+    <!-- Ventana de consentimiento (Actividad 5): aparece tras el login si falta o se revocó alguna finalidad -->
+    <div class="modal-overlay d-none" id="consentimiento-modal" role="dialog" aria-modal="true" aria-labelledby="consentimiento-titulo">
+      <div class="modal-card">
+        <div class="panel-heading">
+          <div><div class="eyebrow">CONSENTIMIENTO · VERSIÓN <span class="version-terminos">—</span></div><h2 id="consentimiento-titulo">Necesitamos tu consentimiento</h2></div>
+        </div>
+        <p class="mb-0">Para usar Monify debes aceptar <strong>cada una</strong> de las finalidades. Aceptar una no implica aceptar otra. Mientras falte alguna, solo podrás usar el módulo <strong>Mis derechos</strong>.</p>
+        <form class="form-grid" id="consentimiento-form">
           <div class="form-error d-none"></div>
-          <p class="alert alert-warning mb-0">Debes aceptar la versión vigente de los términos para seguir operando.</p>
-          <label class="field checkbox-field"><input type="checkbox" name="aceptaTerminos" required><span>He leído y acepto los Términos y Condiciones.</span></label>
-          <label class="field checkbox-field"><input type="checkbox" name="aceptaTratamientoDatos" required><span>Autorizo el tratamiento de mis datos personales.</span></label>
-          <button class="btn btn-primary" type="submit">Aceptar y continuar</button>
+          <div class="confirmacion" id="consentimiento-finalidades"></div>
+          <div class="acciones-modal">
+            <button class="btn btn-primary" type="submit">Otorgar consentimiento</button>
+            <button class="btn btn-refresh" type="button" id="consentimiento-derechos">Ir a Mis derechos</button>
+            <button class="btn btn-refresh btn-peligro" type="button" id="consentimiento-rechazar">Rechazar y cerrar sesión</button>
+          </div>
+          <small class="confirmacion-nota">Lee los <a href="#" data-ver-terminos>Términos y Condiciones</a>. Tu decisión queda registrada con fecha, canal y dispositivo.</small>
         </form>
       </div>
     </div>
@@ -112,6 +127,8 @@
         <section class="page" id="page-creditos"></section>
         <section class="page" id="page-riesgo"></section>
         <section class="page" id="page-privacidad"></section>
+        <section class="page" id="page-derechos"></section>
+        <section class="page" id="page-supervision"></section>
         <section class="page" id="page-administracion"></section>
         <section class="page" id="page-auditoria"></section>
         <section class="page" id="page-actividad"></section>

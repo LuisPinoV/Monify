@@ -5,11 +5,13 @@ import { crearIdentificador } from '../../utilidades/identificador';
 import type { ContextoCliente } from '../../utilidades/contexto-cliente';
 import type { TipoCuenta } from '../autorizacion/roles';
 
-export const VERSION_TEXTOS_CONFIRMACION = 'NR-1';
+export const VERSION_TEXTOS_CONFIRMACION = 'NR-2';
 
 // Texto exacto que el titular acepta al marcar la casilla de confirmación de cada acción crítica.
 export const TEXTOS_NO_REPUDIO = {
   'terminos.aceptar': 'Declaro haber leído y aceptado los Términos y Condiciones de Monify y reconozco que esta aceptación queda registrada como evidencia.',
+  'consentimiento.otorgar': 'Otorgo mi consentimiento para cada finalidad que marqué, de forma libre e informada, y reconozco que queda registrado como evidencia.',
+  'consentimiento.revocar': 'Revoco este consentimiento. Entiendo que, mientras no lo vuelva a otorgar, solo podré usar el módulo de ejercicio de derechos.',
   'transaccion.crear': 'Confirmo que autorizo esta transacción, que los datos son correctos y que no podré desconocerla una vez ejecutada.',
   'solicitud_credito.crear': 'Confirmo que solicito este crédito, que entiendo sus condiciones y que autorizo la evaluación de mi riesgo crediticio.',
   'solicitud_credito.resolver': 'Confirmo que esta decisión sobre la solicitud de crédito es de mi responsabilidad y queda registrada a mi nombre.',

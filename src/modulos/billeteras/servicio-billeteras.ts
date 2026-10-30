@@ -58,7 +58,7 @@ export class ServicioBilleteras {
   }
 
   async agregarTarjeta(usuarioId: number, bancoId: number, numeroTarjeta: string): Promise<TarjetaVista> {
-    await this.consentimientos.exigirTerminosVigentes(usuarioId);
+    await this.consentimientos.exigirConsentimiento(usuarioId);
     const numero = numeroTarjeta.replace(/[\s-]/g, '');
     if (!validarNumeroTarjeta(numero)) throw new BadRequestException('numeroTarjeta no es un número de tarjeta válido');
     const banco = await this.baseDatos.consultar<{ nombreBanco: string }>('SELECT "nombreBanco" FROM "Banco" WHERE "idBanco" = $1', [bancoId]);

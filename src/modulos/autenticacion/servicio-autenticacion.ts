@@ -16,7 +16,9 @@ const MENSAJE_CREDENCIALES = 'correo o contraseña incorrectos';
 export interface RespuestaLogin {
   accessToken: string;
   usuario: { id: string; cuenta: TipoCuenta; rol: Rol };
-  requiereAceptarTerminos: boolean;
+  // Actividad 5: si falta algún consentimiento, el cliente muestra la ventana de consentimiento antes de todo lo demás.
+  requiereConsentimiento: boolean;
+  finalidadesPendientes: string[];
   contrasenaExpiraEn?: string;
 }
 
@@ -111,11 +113,13 @@ export class ServicioAutenticacion {
 
     await this.reiniciarIntentos(credencial);
     const accessToken = await this.jwt.signAsync({ sub: String(credencial.id), cuenta: credencial.cuenta, rol: credencial.rol });
-    await this.auditoria.registrar({ actor, accion: 'auth.login', resultado: 'exito', contexto });
+    await this.auditoria.registrar({ actor, accion: 'auth.login', resultado: 'exito', contexto, detalle: { metodo: 'contrasena' } });
+    const pendientes = credencial.rol === 'usuario' ? await this.consentimientos.pendientes(credencial.id) : [];
     return {
       accessToken,
       usuario: { id: String(credencial.id), cuenta: credencial.cuenta, rol: credencial.rol },
-      requiereAceptarTerminos: credencial.rol === 'usuario' && !(await this.consentimientos.terminosVigentes(credencial.id)),
+      requiereConsentimiento: pendientes.length > 0,
+      finalidadesPendientes: pendientes,
       contrasenaExpiraEn: credencial.expiraEn?.toISOString()
     };
   }

@@ -49,7 +49,7 @@ async function vaciar(baseDatos: BaseDatos): Promise<void> {
   // TRUNCATE no dispara los triggers de fila, así que también vacía las tablas de solo anexado (solo en desarrollo).
   await baseDatos.consultar(`
     TRUNCATE "UsuarioCredito", "SolicitudCredito", "Credito", "Deuda", "Transaccion", "Billetera", "Tarjeta",
-             "ConsultaDeRiesgo", "VerificadorDeIdentidad", "AutorizacionAcceso", "UserConsent", "UserLogs",
+             "ConsultaDeRiesgo", "VerificadorDeIdentidad", "AutorizacionAcceso", "HistorialSolicitudDerecho", "SolicitudDerecho", "ConsentLogs", "UserConsent", "UserLogs",
              "EvidenciaNoRepudio", "CredAuthUser", "CredAuthAdministrador", "Usuario", "AdministradorRiesgo"
     RESTART IDENTITY CASCADE
   `);
@@ -100,7 +100,7 @@ async function main(): Promise<void> {
       const perfil = await usuarios.registrar({
         nombre: `${nombre} ${apellido}`, correo, rut: rutAleatorio(), fechaNacimiento: fechaNacimientoAdulta(),
         rentaMensual: randomInt(350_000, 5_000_000), numeroCelular: `+569${randomInt(10_000_000, 99_999_999)}`, contrasena: CONTRASENA_DESARROLLO
-      }, { versionTerminos: VERSION_TERMINOS, aceptaTerminos: true, aceptaTratamientoDatos: true }, CONTEXTO);
+      }, { versionTerminos: VERSION_TERMINOS, aceptaTerminos: true, aceptaTratamientoDatos: true, aceptaEvaluacionCrediticia: true }, CONTEXTO);
       if (indice < 2) credenciales.push({ rol: 'usuario', correo });
       const id = Number(perfil.id);
       const sesion: Sesion = { id, cuenta: 'usuario', rol: 'usuario' };
@@ -125,7 +125,7 @@ async function main(): Promise<void> {
 
       if (indice % 3 === 0) {
         const credito = elegir(creditos);
-        const solicitud = await operaciones.crearSolicitud(sesion, { creditoId: Number(credito.id), montoSolicitado: credito.monto, aceptaEvaluacionCrediticia: true }, true, CONTEXTO);
+        const solicitud = await operaciones.crearSolicitud(sesion, { creditoId: Number(credito.id), montoSolicitado: credito.monto }, true, CONTEXTO);
         if (indice % 2 === 0) {
           const revisor: Sesion = { id: ids.administrador_riesgo!, cuenta: 'administrador_riesgo', rol: 'administrador_riesgo' };
           await operaciones.resolverSolicitud(revisor, Number(solicitud.id), moroso ? 'rechazada' : 'aprobada', true, CONTEXTO);

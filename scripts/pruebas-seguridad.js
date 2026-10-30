@@ -47,7 +47,7 @@ async function login(correo, contrasena = CLAVE) {
 (async () => {
   const { version } = (await api('GET', '/terminos')).datos;
   const titularA = { nombre: 'Titular A', correo: `a${sufijo}@prueba.dev`, rut: `${sufijo}1-1`, fechaNacimiento: '1990-01-01', contrasena: 'ClaveTitularA1' };
-  const tos = { versionTerminos: version, aceptaTerminos: true, aceptaTratamientoDatos: true };
+  const tos = { versionTerminos: version, aceptaTerminos: true, aceptaTratamientoDatos: true, aceptaEvaluacionCrediticia: true };
 
   console.log('\n1. Minimización y validación de datos');
   await prueba(1, 'registro de un menor de edad es rechazado', async () => espera(await api('POST', '/usuarios', { cuerpo: { ...titularA, fechaNacimiento: '2015-06-01', ...tos } }), 400));
@@ -131,7 +131,12 @@ async function login(correo, contrasena = CLAVE) {
     assert.equal(evidencia.firmaValida, true);
     return `evidencia ${evidencia.id.slice(0, 8)}…, firma RSA válida`;
   });
-  await prueba(5, 'no se puede cerrar la cuenta con saldo distinto de $0 (TOS, sección 7)', async () => espera(await api('DELETE', '/usuarios/me', { token: tA, cuerpo: { contrasena: titularA.contrasena, confirmacionNoRepudio: true } }), 409));
+  await prueba(5, 'no se puede cerrar la cuenta con saldo distinto de $0 (TOS, sección 7)', async () => {
+    const creada = await api('POST', '/derechos/solicitudes', { token: tA, cuerpo: { tipo: 'supresion', confirmacionNoRepudio: true } });
+    const r = await api('POST', `/derechos/solicitudes/${creada.datos.solicitud.id}/verificar`, { token: tA, cuerpo: { contrasena: titularA.contrasena, codigo: creada.datos.verificacion.codigoDesarrollo } });
+    assert.equal(r.datos.solicitud.resultado, 'rechazada');
+    return `supresión rechazada: "${r.datos.solicitud.respuesta.slice(-60)}"`;
+  });
 
   console.log('\n6. Auditoría y manejo de errores');
   await prueba(6, 'los accesos denegados quedan registrados en la bitácora', async () => {

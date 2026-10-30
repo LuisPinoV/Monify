@@ -30,27 +30,37 @@ const ACCIONES = {
   'roles.gestionar': 'Gestionar roles y permisos', 'claves.acceder': 'Acceso a claves criptográficas', 'cuenta.crear': 'Crear cuentas',
   'logs.revisar': 'Revisar logs del sistema', 'usuarios.listar': 'Listar cuentas (seudonimizadas)', 'tarjeta.agregar': 'Agregar tarjeta',
   'solicitud_credito.ver': 'Ver solicitudes de crédito', 'credito.gestionar': 'Gestionar catálogo de créditos', 'riesgo.registrar': 'Registrar riesgo y deudas',
-  'kyc.ver': 'Ver verificación de identidad', 'kyc.registrar': 'Registrar verificación de identidad', 'cuenta.eliminar': 'Eliminar cuenta',
-  'consentimiento.gestionar': 'Gestionar consentimientos', 'datos.exportar': 'Exportar mis datos', 'autorizacion.gestionar': 'Otorgar autorizaciones de acceso'
+  'kyc.ver': 'Ver verificación de identidad', 'kyc.registrar': 'Registrar verificación de identidad',
+  'consentimiento.gestionar': 'Gestionar consentimientos', 'autorizacion.gestionar': 'Otorgar autorizaciones de acceso',
+  'derechos.ejercer': 'Ejercer derechos (acceso, rectificación, supresión)', 'derechos.supervisar': 'Supervisar solicitudes de derechos'
 };
 const AMBITOS = { financiera: 'Información financiera', movimientos: 'Historial de movimientos', deuda: 'Deudas', logs: 'Logs del sistema' };
 const FINALIDADES = {
   terminos_y_condiciones: 'Términos y Condiciones', tratamiento_datos_personales: 'Tratamiento de datos personales', evaluacion_crediticia: 'Evaluación crediticia'
 };
-const CONTRACTUALES = ['terminos_y_condiciones', 'tratamiento_datos_personales'];
+const ESTADO_CONSENTIMIENTO = { otorgado: 'Otorgado', revocado: 'Revocado', reemplazado: 'Reemplazado (versión anterior)', pendiente: 'Pendiente', rechazado: 'Rechazado' };
+const TIPO_DERECHO = { acceso: 'Acceso y portabilidad', rectificacion: 'Rectificación', supresion: 'Supresión' };
+const ESTADO_DERECHO = {
+  recibida: 'Recibida', verificada: 'Identidad verificada', en_evaluacion: 'En evaluación', ejecutada: 'Ejecutada', rechazada: 'Rechazada', cerrada: 'Cerrada'
+};
+const CAMPOS_RECTIFICACION = { nombre: 'Nombre', numeroCelular: 'Celular', correo: 'Correo', rentaMensual: 'Renta mensual' };
 
 const S = {
   token: sessionStorage.getItem('monify.accessToken'),
   sesion: JSON.parse(sessionStorage.getItem('monify.sesion') || 'null'),
   permisos: {},
   terminos: null,
-  cuentas: []
+  cuentas: [],
+  consentimiento: null,
+  codigos: {}
 };
 
 const regla = (accion) => S.permisos[accion] ?? 'denegado';
 const puede = (accion) => regla(accion) !== 'denegado';
 const esTitular = () => S.sesion?.rol === 'usuario';
 const usaMotivo = () => Object.values(S.permisos).includes('necesidad');
+// Titular al que le falta (o revocó) un consentimiento: solo puede usar Mis derechos (el backend lo exige igual).
+const restringido = () => esTitular() && S.consentimiento !== null && !S.consentimiento.completo;
 
 // ---------------------------------------------------------------- API
 // Canal y dispositivo viajan en cada petición: la bitácora los registra (no se guarda la IP).
@@ -74,6 +84,10 @@ async function api(method, path, body) {
   if (response.status === 401 && S.token && path !== '/auth/login') {
     cerrarSesion();
     throw new Error('tu sesión expiró o fue bloqueada; vuelve a iniciar sesión');
+  }
+  if (response.status === 403 && payload.codigo === 'CONSENTIMIENTO_REQUERIDO' && S.token) {
+    await actualizarConsentimiento();
+    abrirConsentimiento();
   }
   if (!response.ok) {
     const mensaje = Array.isArray(payload.message) ? payload.message.join(', ') : payload.message;
@@ -187,19 +201,7 @@ async function vistaResumen() {
       ${panel('MI CUENTA', 'Datos de la cuenta', tabla(['Campo', 'Valor'], datosCuenta.map(([k, v]) => `<tr><td>${k}</td><td>${escapeHtml(v)}</td></tr>`)), { clase: 'form-panel' })}
       ${panel('RBAC', `Permisos del rol ${ROLES[perfil.rol] ?? perfil.rol}`, tabla(['Acción o recurso', 'Regla'], filasPermisos))}
     </section>
-    ${regla('perfil.actualizar') === 'propio' || (esTitular() && puede('perfil.actualizar')) ? `<section class="content-grid content-grid-form">${panel('MI PERFIL', 'Actualizar perfil', formulario('perfil-form', `
-      ${campo('Nombre completo', `<input type="text" name="nombre" maxlength="200" placeholder="${escapeHtml(perfil.nombre)}">`)}
-      ${campo('Celular', `<input type="text" name="numeroCelular" maxlength="20">`)}
-      ${campo('Renta mensual (se guarda solo el tramo)', '<input type="number" name="rentaMensual" min="0" step="1">')}`, 'Guardar cambios'), { clase: 'form-panel' })}</section>` : ''}`;
-  bindForm('perfil-form', async (data) => {
-    const cuerpo = {};
-    if (data.get('nombre')) cuerpo.nombre = data.get('nombre');
-    if (data.get('numeroCelular')) cuerpo.numeroCelular = data.get('numeroCelular');
-    if (data.get('rentaMensual')) cuerpo.rentaMensual = Number(data.get('rentaMensual'));
-    await patchData('/usuarios/me', cuerpo);
-    await vistaResumen();
-    return 'Perfil actualizado';
-  });
+    ${esTitular() ? `<section class="content-grid">${panel('MIS DATOS', '¿Algún dato está incorrecto?', `<p class="mb-0">La corrección de tus datos, la copia de tu información y la eliminación de la cuenta se piden en <a href="#/derechos">Mis derechos</a>, con verificación de identidad.</p>`, { clase: 'form-panel' })}</section>` : ''}`;
 }
 
 async function vistaBilletera() {
@@ -281,7 +283,6 @@ async function vistaCreditos() {
       ${puede('solicitud_credito.crear') ? panel('NUEVA SOLICITUD', 'Solicitar crédito', creditos.length ? formulario('solicitud-form', `
         ${campo('Crédito', `<select name="creditoId" required>${creditos.map((c) => `<option value="${c.id}" data-monto="${c.monto}">#${c.id} · ${formatCurrency(c.monto)} · ${Number(c.tasaInteres)}%</option>`).join('')}</select>`)}
         ${campo('Monto solicitado (CLP)', '<input type="number" name="montoSolicitado" min="1" step="1" required>')}
-        <label class="field checkbox-field"><input type="checkbox" name="aceptaEvaluacionCrediticia"><span>Autorizo la evaluación de mi riesgo crediticio, incluida la consulta a una central de riesgo (se pide solo la primera vez).</span></label>
         ${casillaNoRepudio('solicitud_credito.crear')}`, 'Enviar solicitud') : '<div class="empty-state">No hay créditos disponibles.</div>', { clase: 'form-panel' }) : ''}
       ${panel('CATÁLOGO', 'Créditos disponibles', tabla(['ID', 'Monto', 'Tasa'], creditos.map((c) => `<tr><td>#${c.id}</td><td class="amount">${formatCurrency(c.monto)}</td><td>${Number(c.tasaInteres)}%</td></tr>`)), { contador: creditos.length })}
     </section>
@@ -305,7 +306,7 @@ async function vistaCreditos() {
   bindForm('solicitud-form', async (data) => {
     await postData('/solicitudes-credito', {
       creditoId: data.get('creditoId'), montoSolicitado: Number(data.get('montoSolicitado')),
-      aceptaEvaluacionCrediticia: marcado(data, 'aceptaEvaluacionCrediticia'), confirmacionNoRepudio: marcado(data, 'confirmacionNoRepudio')
+      confirmacionNoRepudio: marcado(data, 'confirmacionNoRepudio')
     });
     await vistaCreditos();
     return 'Solicitud enviada';
@@ -374,19 +375,34 @@ async function vistaRiesgo() {
   }, { reset: false });
 }
 
+const badge = (clave, texto) => `<span class="badge badge-${clave}">${escapeHtml(texto ?? clave)}</span>`;
+
 async function vistaPrivacidad() {
   const pagina = $('#page-privacidad');
-  const [consentimientos, autorizaciones, beneficiarios] = await Promise.all([
-    getData('/consentimientos'), getData('/autorizaciones'), getData('/autorizaciones/beneficiarios')
+  const [estado, historial, autorizaciones, beneficiarios] = await Promise.all([
+    getData('/consentimientos'), getData('/consentimientos/historial'), getData('/autorizaciones'), getData('/autorizaciones/beneficiarios')
   ]);
+  S.consentimiento = estado;
   const nombreBeneficiario = (id) => {
     const b = beneficiarios.find((x) => x.id === String(id));
     return b ? `${escapeHtml(b.nombre)} (${ROLES[b.rol]})` : `#${id}`;
   };
-  pagina.innerHTML = `${heading('TUS DERECHOS', 'Privacidad y datos', 'Acceso, rectificación, portabilidad, revocación de consentimientos, autorizaciones de acceso y eliminación de tu cuenta.')}
+  const vigentes = estado.finalidades.filter((f) => f.vigente);
+  pagina.innerHTML = `${heading('CONSENTIMIENTO', 'Privacidad y consentimientos', 'Cada finalidad se otorga y se revoca por separado. Si revocas una, solo podrás usar Mis derechos hasta que la vuelvas a otorgar.')}
+    <section class="content-grid">
+      ${panel('ESTADO ACTUAL', `Consentimientos (versión ${escapeHtml(estado.versionVigente)})`, tabla(['Finalidad', 'Estado', 'Versión', 'Canal', 'Otorgado', 'Revocado'], estado.finalidades.map((f) => `<tr>
+        <td><strong>${FINALIDADES[f.finalidad] ?? escapeHtml(f.finalidad)}</strong><br><small class="confirmacion-nota">${escapeHtml(f.descripcion)}</small></td>
+        <td>${badge(f.estado, ESTADO_CONSENTIMIENTO[f.estado])}</td><td>${escapeHtml(f.versionTexto ?? '—')}</td><td>${escapeHtml(f.canal ?? '—')}</td>
+        <td class="activity-date">${formatDate(f.otorgadoEl, true)}</td><td class="activity-date">${formatDate(f.revocadoEl, true)}</td></tr>`)), { contador: estado.finalidades.length })}
+    </section>
     <section class="content-grid content-grid-form">
-      ${panel('PORTABILIDAD', 'Descargar mis datos', `<p>Descarga en formato JSON tu cuenta, billetera, transacciones, créditos, consentimientos y tu actividad registrada.</p><button class="btn btn-primary" id="exportar-button" type="button">Descargar mis datos</button>`, { clase: 'form-panel' })}
-      ${panel('CONSENTIMIENTOS', 'Consentimientos otorgados', tabla(['Finalidad', 'Versión', 'Canal', 'Otorgado', 'Estado', ''], consentimientos.map((c) => `<tr><td>${FINALIDADES[c.finalidad] ?? escapeHtml(c.finalidad)}</td><td>${escapeHtml(c.versionTexto)}</td><td>${escapeHtml(c.canal)}</td><td>${formatDate(c.otorgadoEl)}</td><td>${c.vigente ? '<span class="badge badge-verificada">Vigente</span>' : `<span class="badge badge-rechazada">Revocado ${formatDate(c.revocadoEl)}</span>`}</td><td>${c.vigente && !CONTRACTUALES.includes(c.finalidad) ? `<button class="btn-mini" data-revocar-consentimiento="${c.id}">Revocar</button>` : ''}</td></tr>`)), { contador: consentimientos.length })}
+      ${panel('REVOCACIÓN', 'Revocar un consentimiento', vigentes.length ? formulario('revocar-form', `
+        ${campo('Finalidad', `<select name="finalidad">${vigentes.map((f) => `<option value="${f.finalidad}">${FINALIDADES[f.finalidad] ?? f.finalidad}</option>`).join('')}</select>`)}
+        ${casillaNoRepudio('consentimiento.revocar')}`, 'Revocar') : '<div class="empty-state">No tienes consentimientos vigentes.</div>', { clase: 'form-panel' })}
+      ${panel('HISTORIAL', 'Cambios de estado de tus consentimientos', tabla(['#', 'Fecha y hora', 'Finalidad', 'Acción', 'Cambio', 'Versión', 'Canal', 'Dispositivo'], historial.map((e) => `<tr>
+        <td class="mono">${e.idEvento}</td><td class="activity-date">${formatDate(e.fechaHora, true)}</td><td>${FINALIDADES[e.finalidad] ?? escapeHtml(e.finalidad)}</td>
+        <td>${badge(e.accion, ESTADO_CONSENTIMIENTO[e.accion])}</td><td class="mono">${escapeHtml(e.estadoAnterior ?? '∅')} → ${escapeHtml(e.estadoNuevo ?? '∅')}</td>
+        <td>${escapeHtml(e.versionTexto)}</td><td>${escapeHtml(e.canal)}</td><td title="${escapeHtml(e.dispositivo)}">${escapeHtml(e.dispositivo.slice(0, 32))}</td></tr>`)), { contador: historial.length })}
     </section>
     <section class="content-grid content-grid-form">
       ${panel('AUTORIZACIÓN EXPRESA', 'Autorizar acceso a mis datos', beneficiarios.length ? formulario('autorizacion-form', `
@@ -394,25 +410,14 @@ async function vistaPrivacidad() {
         ${campo('Qué puede ver', `<select name="ambito">${['financiera', 'movimientos', 'deuda'].map((a) => `<option value="${a}">${AMBITOS[a]}</option>`).join('')}</select>`)}
         ${campo('Duración (horas, máximo 72)', '<input type="number" name="horas" min="1" max="72" value="24" required>')}`, 'Otorgar autorización') : '<div class="empty-state">No hay personal que requiera autorización.</div>', { clase: 'form-panel' })}
       ${panel('AUTORIZACIONES', 'Autorizaciones otorgadas', tabla(['ID', 'Beneficiario', 'Ámbito', 'Expira', 'Estado', ''], autorizaciones.map((a) => `<tr><td>#${a.id}</td><td>${nombreBeneficiario(a.beneficiarioId)}</td><td>${AMBITOS[a.ambito] ?? a.ambito}</td><td>${formatDate(a.expiraEn, true)}</td><td>${a.vigente ? '<span class="badge badge-verificada">Vigente</span>' : '<span class="badge badge-rechazada">No vigente</span>'}</td><td>${a.vigente ? `<button class="btn-mini" data-revocar-autorizacion="${a.id}">Revocar</button>` : ''}</td></tr>`)), { contador: autorizaciones.length })}
-    </section>
-    <section class="content-grid content-grid-form">
-      ${panel('ZONA DE RIESGO', 'Eliminar mi cuenta', `<p>Según los Términos y Condiciones (sección 7), tu saldo debe ser <strong>$0</strong> y no puedes tener deudas, créditos vigentes ni solicitudes en curso. Tus datos personales se anonimizarán de forma irreversible.</p>
-        ${formulario('eliminar-form', `${campo('Contraseña', '<input type="password" name="contrasena" required autocomplete="current-password">')}${casillaNoRepudio('cuenta.eliminar')}`, 'Eliminar mi cuenta')}`, { clase: 'form-panel' })}
     </section>`;
-  $('#eliminar-form button[type="submit"]').classList.add('btn-peligro');
-  $('#exportar-button').addEventListener('click', async () => {
-    try {
-      const datos = await getData('/usuarios/me/exportar');
-      const enlace = document.createElement('a');
-      enlace.href = URL.createObjectURL(new Blob([JSON.stringify(datos, null, 2)], { type: 'application/json' }));
-      enlace.download = 'monify-mis-datos.json';
-      enlace.click();
-      URL.revokeObjectURL(enlace.href);
-    } catch (error) { showToast(error.message, 'error'); }
+  $('#revocar-form button[type="submit"]')?.classList.add('btn-peligro');
+  bindForm('revocar-form', async (data) => {
+    S.consentimiento = await postData(`/consentimientos/${data.get('finalidad')}/revocar`, { confirmacionNoRepudio: marcado(data, 'confirmacionNoRepudio') });
+    construirNavegacion();
+    abrirConsentimiento();
+    return 'Consentimiento revocado: la fecha y hora quedaron registradas';
   });
-  pagina.querySelectorAll('[data-revocar-consentimiento]').forEach((boton) => boton.addEventListener('click', async () => {
-    try { await postData(`/consentimientos/${boton.dataset.revocarConsentimiento}/revocar`); showToast('Consentimiento revocado'); await vistaPrivacidad(); } catch (error) { showToast(error.message, 'error'); }
-  }));
   pagina.querySelectorAll('[data-revocar-autorizacion]').forEach((boton) => boton.addEventListener('click', async () => {
     try { await deleteData(`/autorizaciones/${boton.dataset.revocarAutorizacion}`); showToast('Autorización revocada'); await vistaPrivacidad(); } catch (error) { showToast(error.message, 'error'); }
   }));
@@ -421,12 +426,102 @@ async function vistaPrivacidad() {
     await vistaPrivacidad();
     return 'Autorización otorgada';
   });
-  bindForm('eliminar-form', async (data) => {
-    if (!window.confirm('Esta acción es irreversible. ¿Eliminar tu cuenta?')) throw new Error('eliminación cancelada');
-    const r = await deleteData('/usuarios/me', { contrasena: data.get('contrasena'), confirmacionNoRepudio: marcado(data, 'confirmacionNoRepudio') });
-    cerrarSesion();
-    return r.mensaje;
+}
+
+// ---------------------------------------------------------------- ejercicio de derechos (Actividad 5, parte 2)
+const flujoSolicitud = (historial) => `<div class="flujo">${historial.map((h) => `<span class="paso" title="${escapeHtml(h.actor)} · ${escapeHtml(h.canal)}">${ESTADO_DERECHO[h.estadoNuevo] ?? h.estadoNuevo}<small>${formatDate(h.fecha, true).split(', ').pop()}</small></span>`).join('→')}</div>`;
+const estadoSolicitud = (s) => s.estado === 'cerrada' && s.resultado ? `${badge('cerrada', 'Cerrada')} ${badge(s.resultado === 'ejecutada' ? 'ejecutada' : s.resultado === 'desistida' ? 'desistida' : 'rechazada', s.resultado)}` : badge(s.estado, ESTADO_DERECHO[s.estado]);
+
+async function vistaDerechos(seleccion) {
+  const pagina = $('#page-derechos');
+  const solicitudes = await getData('/derechos/solicitudes');
+  const porVerificar = solicitudes.filter((s) => s.estado === 'recibida');
+  const elegida = porVerificar.find((s) => s.id === seleccion) ?? porVerificar[0];
+  const codigo = elegida ? S.codigos[elegida.id] : undefined;
+  pagina.innerHTML = `${heading('TUS DERECHOS', 'Mis derechos', 'Acceso y portabilidad, rectificación y supresión de tus datos. Cada solicitud pasa por recepción, verificación de identidad, evaluación, ejecución o respuesta fundamentada y cierre. Respondemos dentro de 30 días corridos.')}
+    ${restringido() ? `<div class="alert alert-warning aviso-consentimiento"><span>Te falta otorgar ${S.consentimiento.pendientes.length} consentimiento(s). Mientras tanto solo puedes usar este módulo.</span><button class="btn btn-primary" type="button" id="abrir-consentimiento">Otorgar consentimiento</button></div>` : ''}
+    <section class="content-grid content-grid-form">
+      ${panel('1 · RECEPCIÓN', 'Nueva solicitud', formulario('derecho-form', `
+        ${campo('Derecho', `<select name="tipo">${Object.entries(TIPO_DERECHO).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>`)}
+        <div class="campos-rectificacion d-none" data-tipo="rectificacion">
+          ${campo('Nombre completo (opcional)', '<input type="text" name="nombre" maxlength="200">')}
+          ${campo('Celular (opcional)', '<input type="text" name="numeroCelular" maxlength="20" placeholder="+56912345678">')}
+          ${campo('Correo (opcional; requiere código)', '<input type="email" name="correo">')}
+          ${campo('Renta mensual (opcional; se guarda el tramo)', '<input type="number" name="rentaMensual" min="0" step="1">')}
+          <small class="confirmacion-nota">El RUT no se rectifica en línea: es el identificador validado por la verificación de identidad.</small>
+        </div>
+        <div class="campos-rectificacion d-none" data-tipo="supresion">
+          <p class="confirmacion-nota mb-0">Se ejecuta solo si tu saldo es $0 y no tienes deudas, créditos ni solicitudes en curso; si no, recibirás una respuesta fundamentada. Es irreversible.</p>
+          ${casillaNoRepudio('cuenta.eliminar').replace(' required', '')}
+        </div>
+        <small class="confirmacion-nota" data-tipo-nota>Acceso: se pide tu contraseña y un código enviado a tu correo.</small>`, 'Enviar solicitud'), { clase: 'form-panel' })}
+      ${panel('2 · VERIFICACIÓN', 'Verificar mi identidad', elegida ? formulario('verificar-form', `
+        ${campo('Solicitud', `<select name="id">${porVerificar.map((s) => `<option value="${s.id}" ${s.id === elegida.id ? 'selected' : ''}>#${s.id} · ${TIPO_DERECHO[s.tipo]}</option>`).join('')}</select>`)}
+        ${campo('Contraseña', '<input type="password" name="contrasena" required autocomplete="current-password">')}
+        ${elegida.nivelVerificacion === 'contrasena_y_codigo' ? campo('Código de 6 dígitos', '<input type="text" name="codigo" inputmode="numeric" maxlength="6" required>') : ''}
+        ${codigo ? `<small class="confirmacion-nota">Código enviado a ${escapeHtml(codigo.destino)}${codigo.valor ? ` · entorno de desarrollo (sin servidor de correo): <span class="codigo-desarrollo">${escapeHtml(codigo.valor)}</span>` : ''}</small>` : ''}
+        <small class="confirmacion-nota">${elegida.nivelVerificacion === 'contrasena' ? 'Riesgo bajo: basta tu contraseña.' : 'Riesgo alto: contraseña y código de un solo uso (10 minutos, máximo 5 intentos).'} No pedimos documentos ni datos adicionales.</small>`, 'Verificar y procesar') : '<div class="empty-state">No tienes solicitudes esperando verificación.</div>', { clase: 'form-panel' })}
+    </section>
+    <section class="content-grid">
+      ${panel('3 · SEGUIMIENTO', 'Mis solicitudes', tabla(['ID', 'Derecho', 'Estado', 'Recibida', 'Plazo', 'Flujo y respuesta', ''], solicitudes.map((s) => `<tr>
+        <td>#${s.id}</td><td>${TIPO_DERECHO[s.tipo]}${s.camposSolicitados ? `<br><small class="confirmacion-nota">${s.camposSolicitados.map((c) => CAMPOS_RECTIFICACION[c] ?? c).join(', ')}</small>` : ''}</td>
+        <td>${estadoSolicitud(s)}</td><td class="activity-date">${formatDate(s.recibidaEn, true)}</td><td class="activity-date">${formatDate(s.plazoRespuesta)}</td>
+        <td>${flujoSolicitud(s.historial)}${s.respuesta ? `<div class="respuesta-derecho">${escapeHtml(s.respuesta)}</div>` : ''}</td>
+        <td><div class="acciones-fila">${s.tipo === 'acceso' && s.estado === 'ejecutada' ? `<button class="btn-mini" data-descargar="${s.id}">Descargar copia</button>` : ''}${['recibida', 'verificada'].includes(s.estado) ? `<button class="btn-mini" data-desistir="${s.id}">Desistir</button>` : ''}</div></td></tr>`), 'Aún no has presentado solicitudes.'), { contador: solicitudes.length })}
+    </section>`;
+  const tipo = $('#derecho-form [name="tipo"]');
+  const notas = { acceso: 'Acceso: se pide tu contraseña y un código enviado a tu correo.', rectificacion: 'Rectificación: basta tu contraseña (si cambias el correo, también un código enviado al correo nuevo).', supresion: 'Supresión: contraseña, código enviado a tu correo y casilla de confirmación.' };
+  tipo.addEventListener('change', () => {
+    pagina.querySelectorAll('[data-tipo]').forEach((bloque) => bloque.classList.toggle('d-none', bloque.dataset.tipo !== tipo.value));
+    $('[data-tipo-nota]', pagina).textContent = notas[tipo.value];
   });
+  $('#verificar-form [name="id"]')?.addEventListener('change', (event) => vistaDerechos(event.target.value));
+  $('#abrir-consentimiento')?.addEventListener('click', abrirConsentimiento);
+  bindForm('derecho-form', async (data) => {
+    const cuerpo = { tipo: data.get('tipo') };
+    if (cuerpo.tipo === 'rectificacion') {
+      cuerpo.cambios = {};
+      for (const campoRect of ['nombre', 'numeroCelular', 'correo']) if (data.get(campoRect)) cuerpo.cambios[campoRect] = data.get(campoRect);
+      if (data.get('rentaMensual')) cuerpo.cambios.rentaMensual = Number(data.get('rentaMensual'));
+    }
+    if (cuerpo.tipo === 'supresion') cuerpo.confirmacionNoRepudio = marcado(data, 'confirmacionNoRepudio');
+    const r = await postData('/derechos/solicitudes', cuerpo);
+    if (r.verificacion.codigoEnviadoA) S.codigos[r.solicitud.id] = { destino: r.verificacion.codigoEnviadoA, valor: r.verificacion.codigoDesarrollo };
+    await vistaDerechos(r.solicitud.id);
+    return `Solicitud #${r.solicitud.id} recibida. Ahora verifica tu identidad.`;
+  });
+  bindForm('verificar-form', async (data) => {
+    const id = data.get('id');
+    const r = await postData(`/derechos/solicitudes/${id}/verificar`, { contrasena: data.get('contrasena'), codigo: data.get('codigo') ?? undefined });
+    delete S.codigos[id];
+    if (r.sesionCerrada) { cerrarSesion(); return 'Tu cuenta fue eliminada y tus datos anonimizados.'; }
+    await vistaDerechos();
+    return `Solicitud #${id}: ${r.solicitud.resultado ?? ESTADO_DERECHO[r.solicitud.estado]}`;
+  });
+  pagina.querySelectorAll('[data-desistir]').forEach((boton) => boton.addEventListener('click', async () => {
+    try { await postData(`/derechos/solicitudes/${boton.dataset.desistir}/desistir`); showToast('Desististe de la solicitud'); await vistaDerechos(); } catch (error) { showToast(error.message, 'error'); }
+  }));
+  pagina.querySelectorAll('[data-descargar]').forEach((boton) => boton.addEventListener('click', async () => {
+    try {
+      const copia = await getData(`/derechos/solicitudes/${boton.dataset.descargar}/descarga`);
+      const enlace = document.createElement('a');
+      enlace.href = URL.createObjectURL(new Blob([JSON.stringify(copia, null, 2)], { type: 'application/json' }));
+      enlace.download = `monify-mis-datos-${boton.dataset.descargar}.json`;
+      enlace.click();
+      URL.revokeObjectURL(enlace.href);
+      showToast(`Copia descargada (SHA-256 ${copia.integridad.huella.slice(0, 12)}…). La solicitud quedó cerrada.`);
+      await vistaDerechos();
+    } catch (error) { showToast(error.message, 'error'); }
+  }));
+}
+
+async function vistaSupervision() {
+  const solicitudes = await getData('/derechos/supervision');
+  $('#page-supervision').innerHTML = `${heading('CUMPLIMIENTO', 'Solicitudes de derechos', 'Seguimiento de estados y plazos. No se muestran los datos pedidos ni las respuestas: solo el titular los ve.')}
+    <section class="content-grid">${panel('SUPERVISIÓN', 'Solicitudes', tabla(['ID', 'Titular', 'Derecho', 'Estado', 'Verificación', 'Canal', 'Recibida', 'Cerrada', 'Plazo'], solicitudes.map((s) => `<tr>
+      <td>#${s.id}</td><td>${cuentaNombre(s.usuarioId)}</td><td>${TIPO_DERECHO[s.tipo]}</td><td>${estadoSolicitud(s)}</td><td>${escapeHtml(s.nivelVerificacion)}</td><td>${escapeHtml(s.canal)}</td>
+      <td class="activity-date">${formatDate(s.recibidaEn, true)}</td><td class="activity-date">${formatDate(s.cerradaEn, true)}</td>
+      <td>${s.fueraDePlazo ? badge('rechazada', 'Fuera de plazo') : formatDate(s.plazoRespuesta)}</td></tr>`)), { contador: solicitudes.length })}</section>`;
 }
 
 async function vistaAdministracion() {
@@ -562,15 +657,18 @@ const RUTAS = [
   { id: 'movimientos', titulo: 'Movimientos', icono: '↕', vista: vistaMovimientos, visible: () => puede('historial.ver') || puede('deuda.ver') },
   { id: 'creditos', titulo: 'Créditos', icono: '%', vista: vistaCreditos, visible: () => puede('solicitud_credito.ver') || puede('credito.gestionar') || puede('solicitud_credito.crear') },
   { id: 'riesgo', titulo: 'Verificación y riesgo', icono: '◈', vista: vistaRiesgo, visible: () => puede('kyc.ver') || puede('info_financiera.ver') || puede('riesgo.registrar') },
-  { id: 'privacidad', titulo: 'Privacidad y datos', icono: '⚿', vista: vistaPrivacidad, visible: () => puede('consentimiento.gestionar') },
+  { id: 'privacidad', titulo: 'Privacidad y consentimientos', icono: '⚿', vista: vistaPrivacidad, visible: () => puede('consentimiento.gestionar') },
+  { id: 'derechos', titulo: 'Mis derechos', icono: '⚖', vista: () => vistaDerechos(), visible: () => puede('derechos.ejercer'), sinConsentimiento: true },
+  { id: 'supervision', titulo: 'Solicitudes de derechos', icono: '⚖', vista: vistaSupervision, visible: () => puede('derechos.supervisar') },
   { id: 'administracion', titulo: 'Administración', icono: '⚙', vista: vistaAdministracion, visible: () => puede('cuenta.crear') || puede('roles.gestionar') },
   { id: 'auditoria', titulo: 'Auditoría', icono: '☰', vista: vistaAuditoria, visible: () => puede('logs.revisar') },
   { id: 'actividad', titulo: 'Mi actividad', icono: '◷', vista: vistaActividad, visible: () => true },
-  { id: 'terminos', titulo: 'Términos y Condiciones', icono: '§', vista: vistaTerminos, visible: () => true }
+  { id: 'terminos', titulo: 'Términos y Condiciones', icono: '§', vista: vistaTerminos, visible: () => true, sinConsentimiento: true }
 ];
+const rutaDisponible = (r) => r.visible() && (!restringido() || r.sinConsentimiento);
 
 function construirNavegacion() {
-  $('#nav').innerHTML = RUTAS.filter((r) => r.visible())
+  $('#nav').innerHTML = RUTAS.filter(rutaDisponible)
     .map((r) => `<a class="nav-link" data-route="${r.id}" href="#/${r.id}"><span class="nav-icon">${r.icono}</span>${r.titulo}</a>`).join('');
   $('#session-role').textContent = ROLES[S.sesion.rol] ?? S.sesion.rol;
   $('#motivo-field').classList.toggle('d-none', !usaMotivo());
@@ -579,7 +677,7 @@ function construirNavegacion() {
 async function navigate() {
   if (!S.token) return;
   const id = location.hash.replace('#/', '').split('?')[0] || 'resumen';
-  const ruta = RUTAS.find((r) => r.id === id && r.visible()) ?? RUTAS[0];
+  const ruta = RUTAS.find((r) => r.id === id && rutaDisponible(r)) ?? RUTAS.find(rutaDisponible);
   document.querySelectorAll('.page').forEach((page) => page.classList.toggle('active', page.id === `page-${ruta.id}`));
   document.querySelectorAll('.nav-link').forEach((link) => link.classList.toggle('active', link.dataset.route === ruta.id));
   $('#breadcrumb-current').textContent = ruta.titulo;
@@ -624,16 +722,29 @@ async function cargarTerminos() {
   } catch { /* los términos se reintentan al abrir el modal */ }
 }
 
-function abrirTerminos(exigirAceptacion = false) {
+function abrirTerminos() {
   $('#terminos-contenido').innerHTML = htmlTerminos();
-  $('#aceptar-terminos-form').classList.toggle('d-none', !exigirAceptacion);
-  $('[data-cerrar-modal]').classList.toggle('d-none', exigirAceptacion);
   $('#terminos-modal').classList.remove('d-none');
+}
+
+async function actualizarConsentimiento() {
+  if (!esTitular()) { S.consentimiento = null; return; }
+  const respuesta = await fetch('/consentimientos', { headers: encabezados() });
+  S.consentimiento = respuesta.ok ? await respuesta.json() : S.consentimiento;
+}
+
+// Ventana posterior al login: una casilla por cada finalidad pendiente (no se puede cerrar sin decidir).
+function abrirConsentimiento() {
+  if (!restringido()) { $('#consentimiento-modal').classList.add('d-none'); return; }
+  $('#consentimiento-finalidades').innerHTML = S.consentimiento.finalidades.filter((f) => !f.vigente).map((f) => `
+    <label class="field checkbox-field"><input type="checkbox" name="${f.campo}"><span><strong>${FINALIDADES[f.finalidad] ?? escapeHtml(f.finalidad)}</strong>${f.estado === 'revocado' ? ' (revocado)' : ''}: ${escapeHtml(f.descripcion)}</span></label>`).join('');
+  $('#consentimiento-modal').classList.remove('d-none');
 }
 
 async function iniciarAplicacion() {
   const { permisos } = await getData('/rbac/mis-permisos');
   S.permisos = permisos;
+  await actualizarConsentimiento();
   $('#login-screen').classList.add('d-none');
   $('.app-shell').classList.remove('d-none');
   construirNavegacion();
@@ -642,10 +753,12 @@ async function iniciarAplicacion() {
     $('#session-name').textContent = perfil.correo;
   } catch { $('#session-name').textContent = `#${S.sesion.id}`; }
   await navigate();
+  abrirConsentimiento();
 }
 
 function cerrarSesion() {
-  S.token = null; S.sesion = null; S.permisos = {}; S.cuentas = [];
+  S.token = null; S.sesion = null; S.permisos = {}; S.cuentas = []; S.consentimiento = null; S.codigos = {};
+  $('#consentimiento-modal').classList.add('d-none');
   sessionStorage.removeItem('monify.accessToken');
   sessionStorage.removeItem('monify.sesion');
   $('.app-shell').classList.add('d-none');
@@ -663,7 +776,6 @@ function guardarSesion(respuesta) {
 async function despuesDeLogin(respuesta) {
   guardarSesion(respuesta);
   if (respuesta.contrasenaExpiraEn) showToast(`Tu contraseña vence el ${formatDate(respuesta.contrasenaExpiraEn, true)} (vigencia de 24 horas).`);
-  if (respuesta.requiereAceptarTerminos) abrirTerminos(true);
   await iniciarAplicacion();
 }
 
@@ -677,24 +789,34 @@ function initAcceso() {
     const cuerpo = {
       nombre: data.get('nombre'), correo: data.get('correo'), rut: data.get('rut'), fechaNacimiento: data.get('fechaNacimiento'),
       contrasena: data.get('contrasena'), versionTerminos: S.terminos?.version,
-      aceptaTerminos: marcado(data, 'aceptaTerminos'), aceptaTratamientoDatos: marcado(data, 'aceptaTratamientoDatos')
+      aceptaTerminos: marcado(data, 'aceptaTerminos'), aceptaTratamientoDatos: marcado(data, 'aceptaTratamientoDatos'),
+      aceptaEvaluacionCrediticia: marcado(data, 'aceptaEvaluacionCrediticia')
     };
     if (data.get('rentaMensual')) cuerpo.rentaMensual = Number(data.get('rentaMensual'));
     if (data.get('numeroCelular')) cuerpo.numeroCelular = data.get('numeroCelular');
     await postData('/usuarios', cuerpo);
     const respuesta = await postData('/auth/login', { correo: cuerpo.correo, contrasena: cuerpo.contrasena });
     await despuesDeLogin(respuesta);
-    return 'Cuenta creada. Tu aceptación de los términos quedó registrada.';
+    return 'Cuenta creada. Cada consentimiento quedó registrado por separado.';
   });
-  bindForm('aceptar-terminos-form', async (data) => {
-    await postData('/consentimientos/terminos', {
-      versionTerminos: S.terminos?.version, aceptaTerminos: marcado(data, 'aceptaTerminos'), aceptaTratamientoDatos: marcado(data, 'aceptaTratamientoDatos')
-    });
-    $('#terminos-modal').classList.add('d-none');
+  bindForm('consentimiento-form', async (data) => {
+    const cuerpo = { versionTerminos: S.terminos?.version };
+    for (const f of S.consentimiento.finalidades.filter((x) => !x.vigente)) cuerpo[f.campo] = marcado(data, f.campo);
+    S.consentimiento = await postData('/consentimientos/otorgar', cuerpo);
+    construirNavegacion();
+    abrirConsentimiento();
     await navigate();
-    return 'Términos aceptados';
+    return S.consentimiento.completo ? 'Consentimiento otorgado: ya puedes usar Monify' : 'Consentimiento registrado; aún faltan finalidades por aceptar';
   });
-  document.querySelectorAll('[data-ver-terminos]').forEach((enlace) => enlace.addEventListener('click', (event) => { event.preventDefault(); abrirTerminos(false); }));
+  $('#consentimiento-rechazar').addEventListener('click', async () => {
+    try { const r = await postData('/consentimientos/rechazar'); cerrarSesion(); showToast(r.mensaje, 'error'); } catch (error) { showToast(error.message, 'error'); }
+  });
+  $('#consentimiento-derechos').addEventListener('click', () => {
+    $('#consentimiento-modal').classList.add('d-none');
+    location.hash = '#/derechos';
+    navigate();
+  });
+  document.querySelectorAll('[data-ver-terminos]').forEach((enlace) => enlace.addEventListener('click', (event) => { event.preventDefault(); abrirTerminos(); }));
   $('[data-cerrar-modal]').addEventListener('click', () => $('#terminos-modal').classList.add('d-none'));
   $('.auth-tabs').addEventListener('click', (event) => {
     const boton = event.target.closest('.tab-button');

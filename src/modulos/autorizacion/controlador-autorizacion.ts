@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Delete, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
-import { Permiso, SesionActual, SoloAutenticado } from './decoradores';
+import { Permiso, SesionActual, SinConsentimiento, SoloAutenticado } from './decoradores';
 import { ACCIONES, AMBITO_POR_ACCION, MATRIZ_PERMISOS, reglaPara, type AmbitoAutorizacion } from './permisos';
 import { ROLES, type Sesion } from './roles';
 import { ServicioAutorizaciones } from './servicio-autorizaciones';
@@ -23,6 +23,7 @@ export class ControladorAutorizacion {
   // Reglas del rol de la sesión: el frontend las usa para mostrar solo lo que el rol puede hacer (el backend las vuelve a exigir).
   @Get('rbac/mis-permisos')
   @SoloAutenticado('rbac.consultar')
+  @SinConsentimiento()
   misPermisos(@SesionActual() sesion: Sesion) {
     return {
       rol: sesion.rol,

@@ -1,34 +1,72 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { BaseDatos, type Ejecutor } from '../../base-datos';
+import { BaseDatos, fijarContexto, type Ejecutor } from '../../base-datos';
 import { ServicioNoRepudio } from '../auditoria/servicio-no-repudio';
 import type { Sesion } from '../autorizacion/roles';
 import type { ContextoCliente } from '../../utilidades/contexto-cliente';
-import { FINALIDADES, VERSION_TERMINOS, type Finalidad } from './terminos';
+import { CAMPO_ACEPTACION, FINALIDADES_OBLIGATORIAS, VERSION_TERMINOS, type Finalidad } from './terminos';
 
-export interface Consentimiento {
-  id: string;
+export type EstadoConsentimiento = 'otorgado' | 'revocado' | 'reemplazado';
+
+// Estado actual de una finalidad para el titular ("pendiente" si nunca la aceptó o si aceptó una versión anterior).
+export interface ConsentimientoFinalidad {
+  finalidad: Finalidad;
+  descripcion: string;
+  campo: string;
+  estado: EstadoConsentimiento | 'pendiente';
+  vigente: boolean;
+  id: string | null;
+  versionTexto: string | null;
+  canal: string | null;
+  otorgadoEl: string | null;
+  revocadoEl: string | null;
+  evidenciaId: string | null;
+}
+
+export interface EstadoConsentimientos {
+  versionVigente: string;
+  completo: boolean;
+  pendientes: Finalidad[];
+  finalidades: ConsentimientoFinalidad[];
+}
+
+export interface EventoConsentimiento {
+  idEvento: string;
+  fechaHora: string;
   finalidad: string;
+  accion: string;
+  estadoAnterior: string | null;
+  estadoNuevo: string | null;
   versionTexto: string;
   canal: string;
-  otorgadoEl: string;
-  revocadoEl: string | null;
-  vigente: boolean;
-  evidenciaId: string | null;
+  dispositivo: string;
+  consentimientoId: string | null;
+}
+
+export interface AceptacionFinalidades {
+  versionTerminos?: string;
+  aceptaTerminos?: unknown;
+  aceptaTratamientoDatos?: unknown;
+  aceptaEvaluacionCrediticia?: unknown;
 }
 
 interface FilaConsentimiento {
   idConsent: number;
-  finalidad: string;
-  versionTexto: string;
-  canal: string;
-  otorgado_el: Date;
+  nombreFinalidad: Finalidad;
+  descripcion: string;
+  versionTexto: string | null;
+  estadoActual: EstadoConsentimiento | null;
+  canal: string | null;
+  otorgado_el: Date | null;
   revocado_el: Date | null;
   idEvidencia: string | null;
 }
 
-// Consentimientos que forman parte de la relación contractual: solo se retiran cerrando la cuenta.
-const FINALIDADES_CONTRACTUALES: string[] = [FINALIDADES.TERMINOS, FINALIDADES.DATOS];
+const iso = (valor: Date | null) => (valor ? new Date(valor).toISOString() : null);
 
+/**
+ * Gestión del consentimiento (Actividad 5, parte 1 y 5.1): catálogo de finalidades, otorgamiento individual,
+ * revocación con fecha y hora, rechazo e historial. El historial (ConsentLogs) lo escribe un trigger de la base.
+ */
 @Injectable()
 export class ServicioConsentimientos {
   constructor(
@@ -36,84 +74,178 @@ export class ServicioConsentimientos {
     private readonly noRepudio: ServicioNoRepudio
   ) {}
 
-  async otorgar(ejecutor: Ejecutor, parametros: {
-    usuarioId: number; finalidad: Finalidad; canal: string; idEvidencia?: string; versionTexto?: string;
-  }): Promise<void> {
-    await ejecutor.consultar(`
-      INSERT INTO "UserConsent" ("idUsuario", "finalidad", "versionTexto", "canal", "idEvidencia")
-      VALUES ($1, $2, $3, $4, $5)
-    `, [parametros.usuarioId, parametros.finalidad, parametros.versionTexto ?? VERSION_TERMINOS, parametros.canal, parametros.idEvidencia ?? null]);
-  }
-
-  async tieneVigente(usuarioId: number, finalidad: Finalidad, version?: string): Promise<boolean> {
-    const resultado = await this.baseDatos.consultar(`
-      SELECT 1 FROM "UserConsent"
-      WHERE "idUsuario" = $1 AND "finalidad" = $2 AND "revocado_el" IS NULL AND ($3::text IS NULL OR "versionTexto" = $3)
-      LIMIT 1
-    `, [usuarioId, finalidad, version ?? null]);
-    return (resultado.rowCount ?? 0) > 0;
-  }
-
-  async terminosVigentes(usuarioId: number): Promise<boolean> {
-    return (await this.tieneVigente(usuarioId, FINALIDADES.TERMINOS, VERSION_TERMINOS))
-      && (await this.tieneVigente(usuarioId, FINALIDADES.DATOS, VERSION_TERMINOS));
-  }
-
-  async exigirTerminosVigentes(usuarioId: number): Promise<void> {
-    if (!(await this.terminosVigentes(usuarioId))) {
-      throw new ForbiddenException(`debes aceptar la versión ${VERSION_TERMINOS} de los Términos y Condiciones para operar`);
-    }
-  }
-
-  async listar(usuarioId: number): Promise<Consentimiento[]> {
-    const resultado = await this.baseDatos.consultar<FilaConsentimiento>(
-      'SELECT * FROM "UserConsent" WHERE "idUsuario" = $1 ORDER BY "idConsent" DESC', [usuarioId]
-    );
-    return resultado.rows.map((fila) => ({
-      id: String(fila.idConsent), finalidad: fila.finalidad, versionTexto: fila.versionTexto, canal: fila.canal,
-      otorgadoEl: new Date(fila.otorgado_el).toISOString(),
-      revocadoEl: fila.revocado_el ? new Date(fila.revocado_el).toISOString() : null,
-      vigente: fila.revocado_el === null,
-      evidenciaId: fila.idEvidencia
-    }));
-  }
-
-  // Aceptación de una nueva versión de los términos por parte de un usuario ya registrado.
-  async aceptarTerminos(sesion: Sesion, datos: {
-    versionTerminos?: string; aceptaTerminos?: unknown; aceptaTratamientoDatos?: unknown;
-  }, contexto: ContextoCliente): Promise<Consentimiento[]> {
-    if (sesion.cuenta !== 'usuario') throw new ForbiddenException('solo los titulares de cuenta aceptan los términos');
+  // Valida que cada finalidad obligatoria venga marcada de forma explícita (una casilla por finalidad).
+  exigirAceptacionCompleta(datos: AceptacionFinalidades): void {
     if (datos.versionTerminos !== VERSION_TERMINOS) {
       throw new BadRequestException(`versionTerminos debe ser la versión vigente (${VERSION_TERMINOS})`);
     }
-    this.noRepudio.exigirConfirmacion(datos.aceptaTerminos);
-    this.noRepudio.exigirConfirmacion(datos.aceptaTratamientoDatos);
+    const faltantes = FINALIDADES_OBLIGATORIAS.filter((finalidad) => (datos as Record<string, unknown>)[CAMPO_ACEPTACION[finalidad]] !== true);
+    if (faltantes.length > 0) {
+      throw new BadRequestException(`debes aceptar cada finalidad por separado; faltan: ${faltantes.map((f) => CAMPO_ACEPTACION[f]).join(', ')}`);
+    }
+  }
+
+  // Registra un consentimiento. Si existía uno vigente de una versión anterior, queda como "reemplazado".
+  async otorgar(ejecutor: Ejecutor, parametros: {
+    usuarioId: number; finalidad: Finalidad; contexto: ContextoCliente; idEvidencia?: string;
+  }): Promise<void> {
+    await fijarContexto(ejecutor, { ...parametros.contexto, actor: 'titular' });
+    await ejecutor.consultar(`
+      UPDATE "UserConsent" SET "estadoActual" = 'reemplazado', "revocado_el" = clock_timestamp()
+      WHERE "idUsuario" = $1 AND "finalidad" = $2 AND "estadoActual" = 'otorgado' AND "versionTexto" <> $3
+    `, [parametros.usuarioId, parametros.finalidad, VERSION_TERMINOS]);
+    await ejecutor.consultar(`
+      INSERT INTO "UserConsent" ("idUsuario", "idFinalidad", "finalidad", "versionTexto", "canal", "idEvidencia")
+      SELECT $1, "idFinalidad", "nombreFinalidad", $3, $4, $5 FROM "Finalidad" WHERE "nombreFinalidad" = $2
+    `, [parametros.usuarioId, parametros.finalidad, VERSION_TERMINOS, parametros.contexto.canal, parametros.idEvidencia ?? null]);
+  }
+
+  // Alta de un titular: se otorgan todas las finalidades (cada una ya validada con su casilla).
+  async otorgarTodas(ejecutor: Ejecutor, usuarioId: number, contexto: ContextoCliente, idEvidencia: string): Promise<void> {
+    for (const finalidad of FINALIDADES_OBLIGATORIAS) {
+      await this.otorgar(ejecutor, { usuarioId, finalidad, contexto, idEvidencia });
+    }
+  }
+
+  async estado(usuarioId: number): Promise<EstadoConsentimientos> {
+    // Por cada finalidad del catálogo, el último consentimiento del titular (si existe).
+    const resultado = await this.baseDatos.consultar<FilaConsentimiento>(`
+      SELECT f."nombreFinalidad", f."descripcion", c."idConsent", c."versionTexto", c."estadoActual", c."canal",
+             c."otorgado_el", c."revocado_el", c."idEvidencia"
+      FROM "Finalidad" f
+      LEFT JOIN LATERAL (
+        SELECT * FROM "UserConsent" uc WHERE uc."idUsuario" = $1 AND uc."idFinalidad" = f."idFinalidad"
+        ORDER BY uc."idConsent" DESC LIMIT 1
+      ) c ON TRUE
+      ORDER BY f."idFinalidad"
+    `, [usuarioId]);
+    const finalidades = resultado.rows
+      .filter((fila) => FINALIDADES_OBLIGATORIAS.includes(fila.nombreFinalidad))
+      .map((fila): ConsentimientoFinalidad => {
+        const vigente = fila.estadoActual === 'otorgado' && fila.versionTexto === VERSION_TERMINOS;
+        return {
+          finalidad: fila.nombreFinalidad, descripcion: fila.descripcion, campo: CAMPO_ACEPTACION[fila.nombreFinalidad],
+          estado: vigente || fila.estadoActual === 'revocado' ? fila.estadoActual! : 'pendiente', vigente,
+          id: fila.idConsent ? String(fila.idConsent) : null, versionTexto: fila.versionTexto, canal: fila.canal,
+          otorgadoEl: iso(fila.otorgado_el), revocadoEl: iso(fila.revocado_el), evidenciaId: fila.idEvidencia
+        };
+      });
+    const pendientes = finalidades.filter((f) => !f.vigente).map((f) => f.finalidad);
+    return { versionVigente: VERSION_TERMINOS, completo: pendientes.length === 0, pendientes, finalidades };
+  }
+
+  async pendientes(usuarioId: number): Promise<Finalidad[]> {
+    const resultado = await this.baseDatos.consultar<{ nombreFinalidad: Finalidad }>(`
+      SELECT f."nombreFinalidad" FROM "Finalidad" f
+      WHERE f."nombreFinalidad" = ANY($2::text[]) AND NOT EXISTS (
+        SELECT 1 FROM "UserConsent" c
+        WHERE c."idUsuario" = $1 AND c."idFinalidad" = f."idFinalidad" AND c."estadoActual" = 'otorgado' AND c."versionTexto" = $3
+      )
+    `, [usuarioId, FINALIDADES_OBLIGATORIAS, VERSION_TERMINOS]);
+    return resultado.rows.map((fila) => fila.nombreFinalidad);
+  }
+
+  async tieneVigente(usuarioId: number, finalidad: Finalidad): Promise<boolean> {
+    return !(await this.pendientes(usuarioId)).includes(finalidad);
+  }
+
+  // Defensa en profundidad: además del guard global, las operaciones de negocio vuelven a exigir el consentimiento.
+  async exigirConsentimiento(usuarioId: number): Promise<void> {
+    const pendientes = await this.pendientes(usuarioId);
+    if (pendientes.length > 0) {
+      throw new ForbiddenException(`debes otorgar todos los consentimientos (versión ${VERSION_TERMINOS}) para operar; pendientes: ${pendientes.join(', ')}`);
+    }
+  }
+
+  async historial(usuarioId: number, limite = 200): Promise<EventoConsentimiento[]> {
+    const resultado = await this.baseDatos.consultar<{
+      idEvento: string; fechaHora: Date; nombreFinalidad: string; accion: string; estadoAnterior: string | null; estadoNuevo: string | null;
+      versionTexto: string; canal: string; dispositivo: string; idConsent: number | null;
+    }>(`
+      SELECT l."idEvento", l."fechaHora", f."nombreFinalidad", l."accion", l."estadoAnterior", l."estadoNuevo",
+             l."versionTexto", l."canal", l."dispositivo", l."idConsent"
+      FROM "ConsentLogs" l JOIN "Finalidad" f ON f."idFinalidad" = l."idFinalidad"
+      WHERE l."idUsuario" = $1 ORDER BY l."idEvento" DESC LIMIT $2
+    `, [usuarioId, Math.min(Math.max(Math.trunc(limite), 1), 500)]);
+    return resultado.rows.map((fila) => ({
+      idEvento: String(fila.idEvento), fechaHora: new Date(fila.fechaHora).toISOString(), finalidad: fila.nombreFinalidad,
+      accion: fila.accion, estadoAnterior: fila.estadoAnterior, estadoNuevo: fila.estadoNuevo, versionTexto: fila.versionTexto,
+      canal: fila.canal, dispositivo: fila.dispositivo, consentimientoId: fila.idConsent === null ? null : String(fila.idConsent)
+    }));
+  }
+
+  // Ventana posterior al login: el titular otorga una o más finalidades pendientes, cada una con su casilla.
+  async otorgarPendientes(sesion: Sesion, datos: AceptacionFinalidades, contexto: ContextoCliente): Promise<EstadoConsentimientos> {
+    this.exigirTitular(sesion);
+    if (datos.versionTerminos !== VERSION_TERMINOS) {
+      throw new BadRequestException(`versionTerminos debe ser la versión vigente (${VERSION_TERMINOS})`);
+    }
+    const pendientes = await this.pendientes(sesion.id);
+    const aceptadas = pendientes.filter((finalidad) => (datos as Record<string, unknown>)[CAMPO_ACEPTACION[finalidad]] === true);
+    if (aceptadas.length === 0) {
+      throw new BadRequestException(pendientes.length === 0
+        ? 'no tienes consentimientos pendientes'
+        : `marca la casilla de cada finalidad que aceptas: ${pendientes.map((f) => CAMPO_ACEPTACION[f]).join(', ')}`);
+    }
     await this.baseDatos.transaccion(async (tx) => {
       const evidencia = await this.noRepudio.registrar({
-        actor: sesion, accion: 'terminos.aceptar', recurso: `terminos:${VERSION_TERMINOS}`,
-        datos: { version: VERSION_TERMINOS }, contexto, versionTexto: VERSION_TERMINOS
+        actor: sesion, accion: 'consentimiento.otorgar', recurso: `consentimientos:${VERSION_TERMINOS}`,
+        datos: { version: VERSION_TERMINOS, finalidades: aceptadas }, contexto, versionTexto: VERSION_TERMINOS
       }, tx);
-      for (const finalidad of [FINALIDADES.TERMINOS, FINALIDADES.DATOS]) {
-        await this.otorgar(tx, { usuarioId: sesion.id, finalidad, canal: contexto.canal, idEvidencia: evidencia.id });
+      for (const finalidad of aceptadas) {
+        await this.otorgar(tx, { usuarioId: sesion.id, finalidad, contexto, idEvidencia: evidencia.id });
       }
     });
-    return this.listar(sesion.id);
+    return this.estado(sesion.id);
   }
 
-  async revocar(sesion: Sesion, idConsent: number): Promise<Consentimiento[]> {
-    const existente = await this.baseDatos.consultar<{ finalidad: string }>(
-      'SELECT "finalidad" FROM "UserConsent" WHERE "idConsent" = $1 AND "idUsuario" = $2 AND "revocado_el" IS NULL',
-      [idConsent, sesion.id]
-    );
-    if (existente.rows.length === 0) throw new NotFoundException('consentimiento no encontrado o ya revocado');
-    if (FINALIDADES_CONTRACTUALES.includes(existente.rows[0].finalidad)) {
-      throw new BadRequestException('los términos y el tratamiento de datos solo se revocan eliminando tu cuenta');
+  // Revocación: queda con fecha y hora; mientras falte el consentimiento el titular solo accede al módulo de derechos.
+  async revocar(sesion: Sesion, finalidad: string, confirmacion: unknown, contexto: ContextoCliente): Promise<EstadoConsentimientos & { accesoRestringido: boolean }> {
+    this.exigirTitular(sesion);
+    if (!FINALIDADES_OBLIGATORIAS.includes(finalidad as Finalidad)) throw new NotFoundException('finalidad no encontrada');
+    this.noRepudio.exigirConfirmacion(confirmacion);
+    await this.baseDatos.transaccion(async (tx) => {
+      const vigente = await tx.consultar<{ idConsent: number }>(
+        `SELECT "idConsent" FROM "UserConsent" WHERE "idUsuario" = $1 AND "finalidad" = $2 AND "estadoActual" = 'otorgado' FOR UPDATE`,
+        [sesion.id, finalidad]
+      );
+      if (vigente.rows.length === 0) throw new NotFoundException('no tienes un consentimiento vigente para esa finalidad');
+      await this.noRepudio.registrar({
+        actor: sesion, accion: 'consentimiento.revocar', recurso: `consentimiento:${vigente.rows[0].idConsent}`,
+        datos: { finalidad }, contexto
+      }, tx);
+      await fijarContexto(tx, { ...contexto, actor: 'titular' });
+      await tx.consultar(
+        `UPDATE "UserConsent" SET "estadoActual" = 'revocado', "revocado_el" = clock_timestamp() WHERE "idConsent" = $1`,
+        [vigente.rows[0].idConsent]
+      );
+    });
+    return { ...(await this.estado(sesion.id)), accesoRestringido: true };
+  }
+
+  // El titular rechaza dar los consentimientos pendientes: queda registrado y el cliente cierra la sesión.
+  async rechazar(sesion: Sesion, contexto: ContextoCliente): Promise<{ registrados: number; mensaje: string }> {
+    this.exigirTitular(sesion);
+    const pendientes = await this.pendientes(sesion.id);
+    for (const finalidad of pendientes) {
+      await this.baseDatos.consultar(`
+        INSERT INTO "ConsentLogs" ("idUsuario", "canal", "dispositivo", "idFinalidad", "versionTexto", "accion")
+        SELECT $1, $2, $3, "idFinalidad", $5, 'rechazado' FROM "Finalidad" WHERE "nombreFinalidad" = $4
+      `, [sesion.id, contexto.canal, contexto.dispositivo, finalidad, VERSION_TERMINOS]);
     }
-    await this.baseDatos.consultar('UPDATE "UserConsent" SET "revocado_el" = now() WHERE "idConsent" = $1', [idConsent]);
-    return this.listar(sesion.id);
+    return { registrados: pendientes.length, mensaje: 'sin los consentimientos no puedes usar Monify; tu sesión se cerrará' };
   }
 
-  async revocarTodos(ejecutor: Ejecutor, usuarioId: number): Promise<void> {
-    await ejecutor.consultar('UPDATE "UserConsent" SET "revocado_el" = now() WHERE "idUsuario" = $1 AND "revocado_el" IS NULL', [usuarioId]);
+  // Anonimización de la cuenta: se revocan todos los consentimientos vigentes.
+  async revocarTodos(ejecutor: Ejecutor, usuarioId: number, contexto: ContextoCliente): Promise<void> {
+    await fijarContexto(ejecutor, { ...contexto, actor: 'sistema:supresion' });
+    await ejecutor.consultar(
+      `UPDATE "UserConsent" SET "estadoActual" = 'revocado', "revocado_el" = clock_timestamp() WHERE "idUsuario" = $1 AND "estadoActual" = 'otorgado'`,
+      [usuarioId]
+    );
+  }
+
+  private exigirTitular(sesion: Sesion): void {
+    if (sesion.cuenta !== 'usuario' || sesion.rol !== 'usuario') throw new ForbiddenException('solo los titulares gestionan consentimientos');
   }
 }

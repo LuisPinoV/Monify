@@ -65,6 +65,16 @@ docker compose up -d
 El comando anterior elimina `monify-pgdata` y vuelve a ejecutar el schema.
 Para conservar los datos, usa `docker compose down` sin `-v`.
 
+## Tablas de la Actividad 5
+
+| Tabla | Para qué | Protección en la base |
+| --- | --- | --- |
+| `Finalidad` | Catálogo de finalidades del consentimiento. | — |
+| `UserConsent` | Un registro por otorgamiento (`estadoActual`, `otorgado_el`, `revocado_el`). | Trigger: no se borra y solo pasa de `otorgado` a `revocado`/`reemplazado`; CHECK de coherencia estado/fecha; índice único de vigentes. |
+| `ConsentLogs` | Log de cada acción sobre un consentimiento (lo escribe un trigger). | Solo anexado. Canal `bd_directa` si el cambio no vino de la API. |
+| `SolicitudDerecho` | Solicitudes de acceso, rectificación y supresión con sus fechas y plazo. | Trigger: no se borra y solo admite las transiciones del flujo. |
+| `HistorialSolicitudDerecho` | Cada cambio de estado de una solicitud (trigger). | Solo anexado. |
+
 ## Datos de desarrollo
 
 Desde la Actividad 4 no hay seed SQL: los nombres, RUT, celulares y correos se

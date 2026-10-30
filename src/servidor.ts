@@ -8,6 +8,7 @@ import { ModuloAdministracion } from './modulos/administracion/modulo-administra
 import { ModuloAuditoria } from './modulos/auditoria/modulo-auditoria';
 import { ModuloAutorizacion } from './modulos/autorizacion/modulo-autorizacion';
 import { ModuloBilleteras } from './modulos/billeteras/modulo-billeteras';
+import { ModuloDerechos } from './modulos/derechos/modulo-derechos';
 import { ModuloTerminos } from './modulos/terminos/modulo-terminos';
 import { ModuloUsuarios } from './modulos/usuarios/modulo-usuarios';
 import { ModuloOperacionesFinancieras } from './modulos/operaciones-financieras/modulo-operaciones-financieras';
@@ -44,7 +45,8 @@ class ControladorSalud {
     ModuloUsuarios,
     ModuloBilleteras,
     ModuloOperacionesFinancieras,
-    ModuloAdministracion
+    ModuloAdministracion,
+    ModuloDerechos
   ],
   controllers: [ControladorSalud]
 })

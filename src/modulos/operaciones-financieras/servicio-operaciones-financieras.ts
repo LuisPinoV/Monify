@@ -11,7 +11,6 @@ import type { Sesion } from '../autorizacion/roles';
 import type { Alcance } from '../autorizacion/servicio-autorizacion';
 import { ServicioBilleteras } from '../billeteras/servicio-billeteras';
 import { ServicioConsentimientos } from '../terminos/servicio-consentimientos';
-import { FINALIDADES } from '../terminos/terminos';
 
 const ESTADOS_VERIFICACION: EstadoVerificacion[] = ['pendiente', 'en_revision', 'verificada', 'rechazada'];
 const ESTADOS_RESOLUCION: EstadoSolicitudCredito[] = ['en_evaluacion', 'aprobada', 'rechazada'];
@@ -67,7 +66,7 @@ export class ServicioOperacionesFinancieras {
   async crearTransaccion(sesion: Sesion, datos: { tarjetaId: number; tipo: 'abono' | 'cargo'; monto: number }, confirmacion: unknown, contexto: ContextoCliente): Promise<Transaccion & { saldoTarjeta: number }> {
     this.noRepudio.exigirConfirmacion(confirmacion);
     const monto = montoValido(datos.monto, 'monto');
-    await this.consentimientos.exigirTerminosVigentes(sesion.id);
+    await this.consentimientos.exigirConsentimiento(sesion.id);
     return this.baseDatos.transaccion(async (tx) => {
       const saldo = await this.billeteras.saldoTarjetaPropia(sesion.id, datos.tarjetaId, tx);
       const movimiento = datos.tipo === 'cargo' ? -monto : monto;
@@ -224,15 +223,12 @@ export class ServicioOperacionesFinancieras {
   }
 
   async crearSolicitud(sesion: Sesion, datos: {
-    creditoId: number; montoSolicitado: number; aceptaEvaluacionCrediticia?: unknown;
+    creditoId: number; montoSolicitado: number;
   }, confirmacion: unknown, contexto: ContextoCliente): Promise<SolicitudCredito> {
     this.noRepudio.exigirConfirmacion(confirmacion);
     const monto = montoValido(datos.montoSolicitado, 'montoSolicitado');
-    await this.consentimientos.exigirTerminosVigentes(sesion.id);
-    const consentimientoPrevio = await this.consentimientos.tieneVigente(sesion.id, FINALIDADES.EVALUACION);
-    if (!consentimientoPrevio && datos.aceptaEvaluacionCrediticia !== true) {
-      throw new BadRequestException('debes autorizar la evaluación de tu riesgo crediticio (aceptaEvaluacionCrediticia) para solicitar un crédito');
-    }
+    // Incluye la finalidad "evaluacion_crediticia", obligatoria desde la Actividad 5.
+    await this.consentimientos.exigirConsentimiento(sesion.id);
     const credito = await this.baseDatos.consultar('SELECT 1 FROM "Credito" WHERE "idCredito" = $1', [datos.creditoId]);
     if (credito.rowCount === 0) throw new NotFoundException('crédito no encontrado');
 
@@ -241,9 +237,6 @@ export class ServicioOperacionesFinancieras {
         actor: sesion, accion: 'solicitud_credito.crear', recurso: `credito:${datos.creditoId}`,
         datos: { creditoId: datos.creditoId, montoSolicitado: monto }, contexto
       }, tx);
-      if (!consentimientoPrevio) {
-        await this.consentimientos.otorgar(tx, { usuarioId: sesion.id, finalidad: FINALIDADES.EVALUACION, canal: contexto.canal, idEvidencia: evidencia.id });
-      }
       const solicitud = await tx.consultar<{ id: number; creadaEn: Date }>(`
         INSERT INTO "SolicitudCredito" ("idCredito", "idEstadoSolicitud", "idEvidencia")
         SELECT $1, "idEstadoSolicitud", $2 FROM "EstadoSolicitud" WHERE "estadoSolicitud" = 'recibida'

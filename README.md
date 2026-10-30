@@ -85,6 +85,8 @@ las cuentas usan la contraseña `Monify2026!` (configurable con `SEED_CONTRASENA
 | `pnpm run db:psql` / `db:logs` | Consola `psql` y logs del contenedor. |
 | `pnpm run desarrollo` | API con recarga automática. |
 | `pnpm run prueba:humo` | Prueba de punta a punta contra la API en ejecución (ver abajo). |
+| `pnpm run prueba:seguridad` | Pruebas de los controles de la Actividad 4 (accesos no autorizados rechazados). |
+| `pnpm run prueba:actividad5` | Pruebas de consentimiento y derechos de la Actividad 5, incluidos intentos directos en la base (lee `PUERTO` y `DATABASE_URL` de `.env`). |
 
 `prueba:humo` necesita la API corriendo y las credenciales de un Admin, por
 ejemplo con la semilla cargada:
@@ -117,7 +119,7 @@ seudonimización, RBAC y auditoría) son las mismas en ambos ambientes.
 | VerificadorDeIdentidad | `hashDeVerificacion` | Solo hash | bcrypt del comprobante del verificador externo. |
 | AdministradorRiesgo | `fechaNacimiento` | Eliminar | Columna eliminada. |
 
-**Anonimización.** Al eliminar su cuenta (`DELETE /usuarios/me`), el titular
+**Anonimización.** Al ejecutarse una solicitud de supresión (`/derechos`, ver Actividad 5), el titular
 pasa a `estadoCuenta = 'eliminada'`: los seudónimos se reemplazan por valores
 `ANON-…`, se borran los vínculos de la bóveda, la credencial, el tramo de renta y
 los índices de búsqueda, y se anonimiza el número de tarjeta. Los registros
@@ -155,9 +157,9 @@ deuda" se le aplica el mismo criterio que para el historial (autorización expre
   requisitos, cuenta, transacciones, créditos, protección de datos, auditoría,
   responsabilidad y **cierre de cuenta** (saldo $0, sin deudas, créditos ni
   solicitudes en curso, contraseña y casilla de confirmación).
-- El registro exige marcar la aceptación de los términos y del tratamiento de
-  datos. Cada aceptación queda en `UserConsent` (finalidad, versión, canal y
-  fecha). Si sube la versión, el usuario debe aceptarla para seguir operando.
+- El registro exige marcar por separado cada finalidad (ver Actividad 5). Cada
+  aceptación queda en `UserConsent` (finalidad, versión, canal y fecha). Si sube
+  la versión, el usuario debe aceptarla para seguir operando.
 - **No repudio.** Las acciones críticas (aceptar el TOS, transacciones, solicitar
   y resolver créditos, eliminar la cuenta) exigen una casilla
   (`confirmacionNoRepudio: true`). Se guarda en `EvidenciaNoRepudio` el texto
@@ -181,14 +183,16 @@ eliminación. Cada persona ve su propia actividad en `GET /usuarios/me/actividad
 | `POST /usuarios` | Público: autoregistro con aceptación del TOS. |
 | `POST /auth/login` | Público. Bloqueo tras 5 intentos fallidos. |
 | `GET /terminos` | Público. |
-| `GET /usuarios/me`, `PATCH /usuarios/me`, `DELETE /usuarios/me` | Perfil propio, actualización y cierre de cuenta. |
-| `GET /usuarios/me/exportar` | Portabilidad: descarga de todos los datos propios. |
+| `GET /usuarios/me` | Perfil propio. La corrección, la copia y la eliminación se piden en `/derechos`. |
 | `GET /usuarios/me/actividad` | Bitácora propia. |
 | `GET /billeteras`, `POST /tarjetas`, `GET /bancos` | Billetera propia. |
 | `GET/POST /transacciones`, `GET/POST /deudas` | Según la matriz RBAC. |
 | `GET/POST /creditos`, `GET/POST /solicitudes-credito`, `PATCH /solicitudes-credito/:id/estado` | Según la matriz RBAC. |
 | `GET/POST /verificaciones-identidad`, `GET/POST /consultas-riesgo`, `GET /informacion-financiera` | Según la matriz RBAC. |
-| `GET /consentimientos`, `POST /consentimientos/terminos`, `POST /consentimientos/:id/revocar` | Titular. |
+| `GET /finalidades` | Público: catálogo de finalidades. |
+| `GET /consentimientos`, `GET /consentimientos/historial`, `POST /consentimientos/otorgar`, `POST /consentimientos/:finalidad/revocar`, `POST /consentimientos/rechazar` | Titular (disponibles aunque falte un consentimiento). |
+| `GET/POST /derechos/solicitudes`, `POST /derechos/solicitudes/:id/verificar`, `POST /derechos/solicitudes/:id/desistir`, `GET /derechos/solicitudes/:id/descarga` | Titular (disponibles aunque falte un consentimiento). |
+| `GET /derechos/supervision` | Admin y Auditor: estados y plazos, sin los datos pedidos. |
 | `GET/POST /autorizaciones`, `DELETE /autorizaciones/:id` | Titular y Auditor. |
 | `GET /usuarios`, `PATCH /usuarios/:id/bloqueo` | Personal (seudónimos) / Admin. |
 | `POST /admin/cuentas`, `PATCH /admin/usuarios/:id/rol`, `POST /admin/cuentas/:id/contrasena` | Admin. |
@@ -200,9 +204,60 @@ eliminación. Cada persona ve su propia actividad en `GET /usuarios/me/actividad
 `http://localhost:3000` sirve el panel. Tiene registro con aceptación del TOS y
 muestra a cada rol solo las secciones que su matriz permite: billetera y
 transacciones con casilla de no repudio, créditos, verificación y riesgo,
-privacidad (consentimientos, autorizaciones, exportación y eliminación de la
-cuenta), administración (cuentas, roles, bloqueos y matriz RBAC) y auditoría
+privacidad (consentimientos, historial y revocación, autorizaciones), Mis derechos
+(solicitudes de acceso, rectificación y supresión), administración (cuentas, roles, bloqueos y matriz RBAC) y auditoría
 (bitácora, verificación de integridad y evidencias firmadas).
+
+## Actividad 5: gestión del consentimiento y ejercicio de derechos
+
+### Consentimiento (partes 1 y 5.1)
+
+- **Modelo.** `Finalidad` (catálogo: `terminos_y_condiciones`,
+  `tratamiento_datos_personales`, `evaluacion_crediticia`) y `UserConsent`
+  (`idFinalidad`, `versionTexto`, `estadoActual`, `otorgado_el`, `revocado_el`).
+  Un consentimiento solo pasa de `otorgado` a `revocado` (o `reemplazado` al
+  aceptar una versión nueva); un índice único impide dos vigentes de la misma
+  finalidad. La base de datos de la Actividad 4 se migra sola al iniciar.
+- **Todas obligatorias, una casilla por finalidad.** El registro y
+  `POST /consentimientos/otorgar` exigen `aceptaTerminos`,
+  `aceptaTratamientoDatos` y `aceptaEvaluacionCrediticia` con valor `true`;
+  aceptar una no implica las demás.
+- **Sin consentimiento no hay sistema.** El guard global responde
+  `403 CONSENTIMIENTO_REQUERIDO` a cualquier endpoint de un titular con una
+  finalidad pendiente o revocada, salvo los marcados `@SinConsentimiento()`
+  (consentimientos, derechos y `rbac/mis-permisos`). El login devuelve
+  `requiereConsentimiento` y el panel muestra una ventana que no se puede cerrar:
+  otorgar, ir a Mis derechos o rechazar (queda registrado y se cierra la sesión).
+- **Historial y revocación.** `ConsentLogs` (log de consentimiento de la parte 3)
+  lo llena un trigger en cada alta o cambio de `UserConsent`, con fecha y hora,
+  canal, dispositivo, finalidad, acción y estado anterior/nuevo; también registra
+  los cambios hechos directo en la base (canal `bd_directa`). Es de solo anexado.
+  La revocación exige la casilla de no repudio y guarda `revocado_el`.
+
+### Ejercicio de derechos (parte 2)
+
+Módulo `src/modulos/derechos`, paralelo al sistema principal y disponible aunque
+falte un consentimiento. Cada solicitud sigue
+`recibida → verificada → en_evaluacion → ejecutada | rechazada → cerrada`; un
+trigger valida las transiciones (no se pueden saltar ni retroceder) y escribe
+`HistorialSolicitudDerecho` (solo anexado). Se guardan las fechas de cada etapa y
+el plazo de respuesta (30 días corridos). Hay una sola solicitud abierta por tipo.
+
+| Derecho | Verificación de identidad | Evaluación y ejecución |
+| --- | --- | --- |
+| Acceso y portabilidad | Contraseña + código de un solo uso al correo registrado | Copia JSON `monify.portabilidad/1` con huella SHA-256, sin seudónimos internos, firmas ni datos de terceros. Se genera al descargarla (no se almacena), se entrega una vez y la descarga cierra la solicitud; vence en 24 h. |
+| Rectificación | Contraseña (nombre, celular, renta); + código al correo nuevo si cambia el correo | Mismas reglas del registro; el RUT no se rectifica en línea. Se actualiza la bóveda: el seudónimo no cambia, así que los demás módulos, la bitácora y las evidencias siguen apuntando al titular; el login usa el correo nuevo y el riesgo, el tramo nuevo. |
+| Supresión | Contraseña + código + casilla de no repudio | Si hay saldo, deudas, créditos o solicitudes en curso se rechaza con respuesta fundamentada (obligación legal / contrato). Si no, se anonimiza la cuenta: se borran la bóveda, la credencial, los cambios pedidos y se revocan consentimientos y autorizaciones; transacciones, créditos, evidencias y bitácora se conservan sin identificar. Los respaldos solo contienen seudónimos y se renuevan en su ciclo de rotación. |
+
+El código de un solo uso dura 10 minutos, se guarda solo como HMAC y admite 5
+intentos. **Limitación:** el proyecto no tiene servidor de correo; el envío se
+simula en `ServicioNotificaciones` y, en `ENTORNO=desarrollo`, el código vuelve
+en la respuesta (`codigoDesarrollo`) para poder probar el flujo. En producción
+ahí se conecta el proveedor de correo.
+
+La bitácora (`UserLogs`) registra `derechos.<tipo>.recibida|verificada|ejecutada|rechazada|desistida|descargada`
+con identificadores, nunca el código, la contraseña ni los datos pedidos. Admin y
+Auditor ven `GET /derechos/supervision` (estados, fechas y plazos).
 
 ## Protección de datos
 

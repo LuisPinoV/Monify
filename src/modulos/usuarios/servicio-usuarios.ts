@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { BaseDatos, type Ejecutor } from '../../base-datos';
 import { PersistenciaCifrada } from '../../seguridad/persistencia-cifrada';
 import { ServicioSeudonimos } from '../../seguridad/servicio-seudonimos';
@@ -12,8 +12,8 @@ import { CODIGO_ROL, ROLES, rolDesdeCodigo, type Rol, type Sesion } from '../aut
 import { HORAS_VIGENCIA_CONTRASENA_ADMIN, normalizarCorreo, ServicioAutenticacion } from '../autenticacion/servicio-autenticacion';
 import { ServicioBilleteras } from '../billeteras/servicio-billeteras';
 import { ServicioOperacionesFinancieras } from '../operaciones-financieras/servicio-operaciones-financieras';
-import { ServicioConsentimientos } from '../terminos/servicio-consentimientos';
-import { FINALIDADES, SALDO_PARA_CERRAR_CUENTA, VERSION_TERMINOS } from '../terminos/terminos';
+import { ServicioConsentimientos, type AceptacionFinalidades } from '../terminos/servicio-consentimientos';
+import { FINALIDADES_OBLIGATORIAS, SALDO_PARA_CERRAR_CUENTA, VERSION_TERMINOS } from '../terminos/terminos';
 
 export const ROLES_PERSONAL: Rol[] = ['admin', 'administrador_riesgo', 'auditor', 'operador_financiero'];
 const ROLES_CAMBIABLES: Rol[] = ['admin', 'auditor', 'operador_financiero'];
@@ -30,11 +30,14 @@ export interface DatosCuenta {
   contrasena: string;
 }
 
-export interface AceptacionTerminos {
-  versionTerminos?: string;
-  aceptaTerminos?: unknown;
-  aceptaTratamientoDatos?: unknown;
+// Campos que el titular puede rectificar. El RUT no se rectifica por esta vía: es el identificador validado por KYC.
+export interface CambiosRectificacion {
+  nombre?: string;
+  numeroCelular?: string;
+  correo?: string;
+  rentaMensual?: number;
 }
+export const CAMPOS_RECTIFICABLES = ['nombre', 'numeroCelular', 'correo', 'rentaMensual'] as const;
 
 interface FilaUsuario {
   idUsuario: number;
@@ -99,12 +102,9 @@ export class ServicioUsuarios {
   // ---------------------------------------------------------------- altas
 
   // Autoregistro de un titular: exige aceptar los Términos y Condiciones (queda evidencia de no repudio).
-  async registrar(datos: DatosCuenta, terminos: AceptacionTerminos, contexto: ContextoCliente): Promise<PerfilCuenta> {
-    if (terminos.versionTerminos !== VERSION_TERMINOS) {
-      throw new BadRequestException(`versionTerminos debe ser la versión vigente (${VERSION_TERMINOS})`);
-    }
-    this.noRepudio.exigirConfirmacion(terminos.aceptaTerminos);
-    this.noRepudio.exigirConfirmacion(terminos.aceptaTratamientoDatos);
+  // Cada finalidad (términos, tratamiento de datos y evaluación crediticia) llega con su propia casilla marcada.
+  async registrar(datos: DatosCuenta, aceptacion: AceptacionFinalidades, contexto: ContextoCliente): Promise<PerfilCuenta> {
+    this.consentimientos.exigirAceptacionCompleta(aceptacion);
     const id = await this.crearCuenta('usuario', datos, contexto, true);
     await this.auditoria.intentarRegistrar({ actor: { id, cuenta: 'usuario' }, accion: 'cuenta.registrar', resultado: 'exito', contexto, detalle: { rol: 'usuario' } });
     return this.obtenerPerfil({ id, cuenta: 'usuario', rol: 'usuario' });
@@ -176,11 +176,9 @@ export class ServicioUsuarios {
         if (conTerminos) {
           const evidencia = await this.noRepudio.registrar({
             actor: { id, cuenta: 'usuario' }, accion: 'terminos.aceptar', recurso: `terminos:${VERSION_TERMINOS}`,
-            datos: { version: VERSION_TERMINOS }, contexto, versionTexto: VERSION_TERMINOS
+            datos: { version: VERSION_TERMINOS, finalidades: FINALIDADES_OBLIGATORIAS }, contexto, versionTexto: VERSION_TERMINOS
           }, tx);
-          for (const finalidad of [FINALIDADES.TERMINOS, FINALIDADES.DATOS]) {
-            await this.consentimientos.otorgar(tx, { usuarioId: id, finalidad, canal: contexto.canal, idEvidencia: evidencia.id });
-          }
+          await this.consentimientos.otorgarTodas(tx, id, contexto, evidencia.id);
         }
         return id;
       });
@@ -262,40 +260,81 @@ export class ServicioUsuarios {
 
   // ---------------------------------------------------------------- modificación
 
-  async actualizarPerfil(sesion: Sesion, datos: { nombre?: string; numeroCelular?: string; rentaMensual?: number }): Promise<PerfilCuenta> {
-    if (sesion.cuenta !== 'usuario') throw new ForbiddenException('tu cuenta no puede modificar su perfil');
-    if (datos.nombre === undefined && datos.numeroCelular === undefined && datos.rentaMensual === undefined) {
-      throw new BadRequestException('indica al menos un campo a modificar: nombre, numeroCelular o rentaMensual');
+  // Valida una rectificación antes de registrarla: mismas reglas que el registro y solo campos permitidos.
+  async validarRectificacion(usuarioId: number, datos: unknown): Promise<CambiosRectificacion> {
+    if (!datos || typeof datos !== 'object' || Array.isArray(datos)) throw new BadRequestException('cambios debe ser un objeto');
+    const entrada = datos as Record<string, unknown>;
+    const desconocidos = Object.keys(entrada).filter((campo) => !(CAMPOS_RECTIFICABLES as readonly string[]).includes(campo));
+    if ('rut' in entrada) {
+      throw new BadRequestException('el RUT no se rectifica en línea: es el identificador validado por la verificación de identidad (KYC); solicítalo por el canal de atención con tu documento');
     }
-    const resultado = await this.baseDatos.consultar<{ nombreCompleto: string; numeroCelular: string | null }>(
-      'SELECT "nombreCompleto", "numeroCelular" FROM "Usuario" WHERE "idUsuario" = $1', [sesion.id]
+    if (desconocidos.length > 0) throw new BadRequestException(`campos no rectificables: ${desconocidos.join(', ')}. Permitidos: ${CAMPOS_RECTIFICABLES.join(', ')}`);
+    const cambios: CambiosRectificacion = {};
+    if (entrada.nombre !== undefined) cambios.nombre = validarTexto(entrada.nombre, 'nombre', 200);
+    if (entrada.numeroCelular !== undefined) {
+      const celular = validarTexto(entrada.numeroCelular, 'numeroCelular', 20);
+      if (!/^\+?[0-9 ]{8,20}$/.test(celular)) throw new BadRequestException('numeroCelular debe tener entre 8 y 20 dígitos');
+      cambios.numeroCelular = celular;
+    }
+    if (entrada.correo !== undefined) {
+      const correo = normalizarCorreo(validarTexto(entrada.correo, 'correo', 254));
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) throw new BadRequestException('correo no es válido');
+      const hash = this.persistenciaCifrada.indiceBusqueda(correo);
+      const propio = await this.baseDatos.consultar('SELECT 1 FROM "Usuario" WHERE "idUsuario" = $1 AND "emailHash" = $2', [usuarioId, hash]);
+      if ((propio.rowCount ?? 0) > 0) throw new BadRequestException('el correo nuevo es igual al registrado');
+      const ocupado = await this.baseDatos.consultar(
+        'SELECT 1 FROM "Usuario" WHERE "emailHash" = $1 UNION ALL SELECT 1 FROM "AdministradorRiesgo" WHERE "emailHash" = $1', [hash]
+      );
+      if ((ocupado.rowCount ?? 0) > 0) throw new ConflictException('el correo ya está registrado en otra cuenta');
+      cambios.correo = correo;
+    }
+    if (entrada.rentaMensual !== undefined) {
+      if (typeof entrada.rentaMensual !== 'number' || !Number.isFinite(entrada.rentaMensual) || entrada.rentaMensual < 0) {
+        throw new BadRequestException('rentaMensual debe ser un número no negativo');
+      }
+      cambios.rentaMensual = entrada.rentaMensual;
+    }
+    if (Object.keys(cambios).length === 0) throw new BadRequestException(`indica al menos un campo a rectificar: ${CAMPOS_RECTIFICABLES.join(', ')}`);
+    return cambios;
+  }
+
+  // Aplica una rectificación ya verificada. Los seudónimos no cambian (solo el valor en la bóveda), así que los demás
+  // módulos, la bitácora y las evidencias siguen apuntando al mismo titular sin actualizarse.
+  async aplicarRectificacion(usuarioId: number, cambios: CambiosRectificacion): Promise<string[]> {
+    const resultado = await this.baseDatos.consultar<{ nombreCompleto: string; numeroCelular: string | null; email: string }>(
+      `SELECT "nombreCompleto", "numeroCelular", "email" FROM "Usuario" WHERE "idUsuario" = $1 AND "estadoCuenta" = 'activa'`, [usuarioId]
     );
     const fila = resultado.rows[0];
     if (!fila) throw new NotFoundException('cuenta no encontrada');
-
-    if (datos.nombre !== undefined) {
-      await this.seudonimos.actualizar(fila.nombreCompleto, validarTexto(datos.nombre, 'nombre', 200));
+    const aplicados: string[] = [];
+    if (cambios.nombre !== undefined) {
+      await this.seudonimos.actualizar(fila.nombreCompleto, cambios.nombre);
+      aplicados.push('nombre');
     }
-    if (datos.numeroCelular !== undefined) {
-      const celular = validarTexto(datos.numeroCelular, 'numeroCelular', 20);
+    if (cambios.numeroCelular !== undefined) {
       if (fila.numeroCelular) {
-        await this.seudonimos.actualizar(fila.numeroCelular, celular);
+        await this.seudonimos.actualizar(fila.numeroCelular, cambios.numeroCelular);
       } else {
-        const seudonimo = await this.seudonimos.seudonimizar('telefono', celular);
-        await this.baseDatos.consultar('UPDATE "Usuario" SET "numeroCelular" = $2 WHERE "idUsuario" = $1', [sesion.id, seudonimo]);
+        const seudonimo = await this.seudonimos.seudonimizar('telefono', cambios.numeroCelular);
+        await this.baseDatos.consultar('UPDATE "Usuario" SET "numeroCelular" = $2 WHERE "idUsuario" = $1', [usuarioId, seudonimo]);
       }
+      aplicados.push('numeroCelular');
     }
-    if (datos.rentaMensual !== undefined) {
-      if (sesion.rol !== 'usuario') throw new BadRequestException('solo los titulares registran renta mensual');
-      if (typeof datos.rentaMensual !== 'number' || !Number.isFinite(datos.rentaMensual) || datos.rentaMensual < 0) {
-        throw new BadRequestException('rentaMensual debe ser un número no negativo');
-      }
+    if (cambios.correo !== undefined) {
+      // El índice HMAC del correo se recalcula: el login usa el correo nuevo desde este momento.
+      await this.baseDatos.consultar('UPDATE "Usuario" SET "emailHash" = $2 WHERE "idUsuario" = $1', [usuarioId, this.persistenciaCifrada.indiceBusqueda(cambios.correo)]);
+      await this.seudonimos.actualizar(fila.email, cambios.correo);
+      aplicados.push('correo');
+    }
+    if (cambios.rentaMensual !== undefined) {
+      // Se guarda solo el nuevo tramo; las próximas evaluaciones de riesgo lo usan automáticamente.
       await this.baseDatos.consultar(
         'UPDATE "Usuario" SET "tramoRenta" = $2 WHERE "idUsuario" = $1',
-        [sesion.id, this.persistenciaCifrada.protegerCampo(tramoRenta(datos.rentaMensual))]
+        [usuarioId, this.persistenciaCifrada.protegerCampo(tramoRenta(cambios.rentaMensual))]
       );
+      aplicados.push('rentaMensual');
     }
-    return this.obtenerPerfil(sesion);
+    return aplicados;
   }
 
   async establecerBloqueo(actor: Sesion, cuenta: 'usuario' | 'administrador_riesgo', id: number, bloqueada: boolean): Promise<ResumenCuenta> {
@@ -366,85 +405,89 @@ export class ServicioUsuarios {
 
   // ---------------------------------------------------------------- baja y anonimización
 
-  // Cierra la cuenta cumpliendo los Términos y Condiciones y anonimiza los datos personales de forma irreversible.
-  async eliminarCuenta(sesion: Sesion, datos: { contrasena?: string; confirmacionNoRepudio?: unknown }, contexto: ContextoCliente): Promise<{ mensaje: string }> {
-    if (sesion.cuenta !== 'usuario' || sesion.rol !== 'usuario') throw new ForbiddenException('solo los titulares pueden eliminar su cuenta');
-    this.noRepudio.exigirConfirmacion(datos.confirmacionNoRepudio);
-    if (typeof datos.contrasena !== 'string' || !(await this.autenticacion.verificarContrasena(sesion, datos.contrasena))) {
-      throw new UnauthorizedException('la contraseña es incorrecta');
-    }
-
+  // Supresión (ya verificada y evaluada): anonimiza los datos personales de forma irreversible.
+  // Se conservan, sin identificar al titular, los registros con obligación legal de retención.
+  async anonimizarCuenta(usuarioId: number, contexto: ContextoCliente): Promise<void> {
     const actual = await this.baseDatos.consultar<{ nombreCompleto: string; rut: string; numeroCelular: string | null; email: string }>(
-      'SELECT "nombreCompleto", "rut", "numeroCelular", "email" FROM "Usuario" WHERE "idUsuario" = $1 AND "estadoCuenta" = \'activa\'', [sesion.id]
+      'SELECT "nombreCompleto", "rut", "numeroCelular", "email" FROM "Usuario" WHERE "idUsuario" = $1 AND "estadoCuenta" = \'activa\'', [usuarioId]
     );
     if (actual.rows.length === 0) throw new NotFoundException('cuenta no encontrada');
     const fila = actual.rows[0];
 
     await this.baseDatos.transaccion(async (tx) => {
-      await tx.consultar('SELECT 1 FROM "Usuario" WHERE "idUsuario" = $1 FOR UPDATE', [sesion.id]);
-      await this.exigirCondicionesDeCierre(sesion.id, tx);
-      await this.noRepudio.registrar({
-        actor: sesion, accion: 'cuenta.eliminar', recurso: `usuario:${sesion.id}`, datos: { usuarioId: sesion.id }, contexto
-      }, tx);
+      await tx.consultar('SELECT 1 FROM "Usuario" WHERE "idUsuario" = $1 FOR UPDATE', [usuarioId]);
+      const pendientes = await this.obligacionesPendientes(usuarioId, tx);
+      if (pendientes.length > 0) throw new ConflictException(`no se puede suprimir la cuenta mientras tenga: ${pendientes.join(', ')}`);
       await tx.consultar(`
         UPDATE "Usuario" SET "nombreCompleto" = $2, "rut" = $3, "rutHash" = NULL, "numeroCelular" = NULL, "tramoRenta" = NULL,
                "email" = $4, "emailHash" = NULL, "isAccessBlocked" = TRUE, "estadoCuenta" = 'eliminada'
         WHERE "idUsuario" = $1
-      `, [sesion.id, generarAnonimo('NOMBRE'), generarAnonimo('RUT'), `${generarAnonimo('CORREO')}@anonimo.monify.invalid`]);
-      await tx.consultar('DELETE FROM "CredAuthUser" WHERE "idUsuario" = $1', [sesion.id]);
+      `, [usuarioId, generarAnonimo('NOMBRE'), generarAnonimo('RUT'), `${generarAnonimo('CORREO')}@anonimo.monify.invalid`]);
+      await tx.consultar('DELETE FROM "CredAuthUser" WHERE "idUsuario" = $1', [usuarioId]);
       await tx.consultar(
         `UPDATE "Tarjeta" SET "numeroTarjeta" = $2 WHERE "idTarjeta" IN (SELECT "idTarjeta" FROM "Billetera" WHERE "idUsuario" = $1)`,
-        [sesion.id, generarAnonimo('TARJETA')]
+        [usuarioId, generarAnonimo('TARJETA')]
       );
-      await tx.consultar('UPDATE "VerificadorDeIdentidad" SET "hashDeVerificacion" = NULL, "metodoDeVerificacion" = NULL WHERE "idUsuario" = $1', [sesion.id]);
+      await tx.consultar('UPDATE "VerificadorDeIdentidad" SET "hashDeVerificacion" = NULL, "metodoDeVerificacion" = NULL WHERE "idUsuario" = $1', [usuarioId]);
       await tx.consultar(
-        'UPDATE "AutorizacionAcceso" SET "revocadoEn" = now() WHERE ("idOtorgante" = $1 OR "idUsuarioObjetivo" = $1 OR "idBeneficiario" = $1) AND "revocadoEn" IS NULL', [sesion.id]
+        'UPDATE "AutorizacionAcceso" SET "revocadoEn" = now() WHERE ("idOtorgante" = $1 OR "idUsuarioObjetivo" = $1 OR "idBeneficiario" = $1) AND "revocadoEn" IS NULL', [usuarioId]
       );
-      await this.consentimientos.revocarTodos(tx, sesion.id);
+      // Los cambios pedidos en rectificaciones anteriores también son datos personales.
+      await tx.consultar('UPDATE "SolicitudDerecho" SET "datosSolicitud" = NULL WHERE "idUsuario" = $1', [usuarioId]);
+      await this.consentimientos.revocarTodos(tx, usuarioId, contexto);
     });
 
     // Sin el vínculo de la bóveda los seudónimos pasan a ser datos anónimos: no hay vuelta atrás.
     try {
       await this.seudonimos.eliminar([fila.nombreCompleto, fila.rut, fila.numeroCelular, fila.email]);
     } catch (error) {
-      this.logger.error(`Cuenta ${sesion.id} anonimizada pero no se pudo vaciar la bóveda: ${(error as Error).message}`);
+      this.logger.error(`Cuenta ${usuarioId} anonimizada pero no se pudo vaciar la bóveda: ${(error as Error).message}`);
     }
-    return { mensaje: 'tu cuenta fue eliminada y tus datos personales anonimizados de forma irreversible' };
   }
 
-  private async exigirCondicionesDeCierre(usuarioId: number, tx: Ejecutor): Promise<void> {
-    const saldo = await this.billeteras.saldoTotal(usuarioId, tx, true);
-    if (saldo !== SALDO_PARA_CERRAR_CUENTA) {
-      throw new ConflictException(`para eliminar tu cuenta el saldo debe ser $0; saldo actual: $${saldo.toLocaleString('es-CL')}. Retira o transfiere tus fondos primero`);
-    }
-    const obligaciones = await this.operaciones.obligacionesPendientes(usuarioId, tx);
+  // Condiciones de la sección 7 de los términos: obligaciones que justifican conservar los datos y rechazar la supresión.
+  async obligacionesPendientes(usuarioId: number, tx: Ejecutor = this.baseDatos): Promise<string[]> {
     const pendientes: string[] = [];
+    const saldo = await this.billeteras.saldoTotal(usuarioId, tx, tx !== this.baseDatos);
+    if (saldo !== SALDO_PARA_CERRAR_CUENTA) pendientes.push(`saldo de $${saldo.toLocaleString('es-CL')} (debe ser $0)`);
+    const obligaciones = await this.operaciones.obligacionesPendientes(usuarioId, tx);
     if (obligaciones.deudas > 0) pendientes.push(`${obligaciones.deudas} deuda(s) registrada(s)`);
     if (obligaciones.creditosVigentes > 0) pendientes.push(`${obligaciones.creditosVigentes} crédito(s) vigente(s)`);
     if (obligaciones.solicitudesEnCurso > 0) pendientes.push(`${obligaciones.solicitudesEnCurso} solicitud(es) de crédito en curso`);
-    if (pendientes.length > 0) throw new ConflictException(`no puedes eliminar tu cuenta mientras tengas: ${pendientes.join(', ')}`);
+    return pendientes;
   }
 
   // ---------------------------------------------------------------- portabilidad
 
-  async exportarDatos(sesion: Sesion) {
-    const alcance = { tipo: 'ids' as const, ids: [sesion.id] };
-    const [perfil, billetera, transacciones, deudas, solicitudes, consultasRiesgo, verificaciones, consentimientos, actividad] = await Promise.all([
+  // Acceso y portabilidad: solo datos del titular, sin seudónimos internos, firmas, hashes ni datos de terceros
+  // (por ejemplo, quién del personal resolvió una solicitud de crédito).
+  async datosParaExportar(usuarioId: number) {
+    const sesion: Sesion = { id: usuarioId, cuenta: 'usuario', rol: 'usuario' };
+    const alcance = { tipo: 'ids' as const, ids: [usuarioId] };
+    const [perfil, billetera, transacciones, deudas, solicitudes, consultasRiesgo, verificaciones, consentimientos, historialConsentimientos, actividad] = await Promise.all([
       this.obtenerPerfil(sesion),
-      this.billeteras.obtenerBilletera(sesion.id),
+      this.billeteras.obtenerBilletera(usuarioId),
       this.operaciones.listarTransacciones(alcance),
       this.operaciones.listarDeudas(alcance),
       this.operaciones.listarSolicitudes(alcance),
       this.operaciones.listarConsultasRiesgo(alcance),
       this.operaciones.listarVerificaciones(alcance),
-      this.consentimientos.listar(sesion.id),
-      this.auditoria.listar({ usuarioId: sesion.id, limite: 500 })
+      this.consentimientos.estado(usuarioId),
+      this.consentimientos.historial(usuarioId, 500),
+      this.auditoria.listar({ usuarioId, limite: 500 })
     ]);
+    const { id: _id, cuenta: _cuenta, rol: _rol, bloqueada: _bloqueada, ...datosPersonales } = perfil;
     return {
-      generadoEn: new Date().toISOString(),
-      versionTerminos: VERSION_TERMINOS,
-      cuenta: perfil, billetera, transacciones, deudas, solicitudesCredito: solicitudes, consultasRiesgo, verificaciones, consentimientos,
-      actividad: actividad.map(({ fechaAccion, accion, canal, dispositivo, resultado, recurso }) => ({ fechaAccion, accion, canal, dispositivo, resultado, recurso }))
+      titular: datosPersonales,
+      billetera: { saldo: billetera.saldo, tarjetas: billetera.tarjetas.map(({ banco, numeroEnmascarado, saldo }) => ({ banco, numeroEnmascarado, saldo })) },
+      transacciones: transacciones.map(({ id, tarjetaId, monto, creadaEn }) => ({ id, tarjetaId, monto, creadaEn })),
+      deudas: deudas.map(({ id, monto, creadaEn }) => ({ id, monto, creadaEn })),
+      solicitudesCredito: solicitudes.map(({ id, creditoId, montoSolicitado, estado, creadaEn }) => ({ id, creditoId, montoSolicitado, estado, creadaEn })),
+      consultasRiesgo: consultasRiesgo.map(({ usuarioId: _u, ...consulta }) => consulta),
+      verificacionesIdentidad: verificaciones.map(({ usuarioId: _u, ...verificacion }) => verificacion),
+      consentimientos: consentimientos.finalidades.map(({ finalidad, estado, versionTexto, canal, otorgadoEl, revocadoEl }) => ({ finalidad, estado, versionTexto, canal, otorgadoEl, revocadoEl })),
+      historialConsentimientos: historialConsentimientos.map(({ fechaHora, finalidad, accion, versionTexto, canal }) => ({ fechaHora, finalidad, accion, versionTexto, canal })),
+      actividad: actividad.map(({ fechaAccion, accion, canal, dispositivo, resultado }) => ({ fechaAccion, accion, canal, dispositivo, resultado }))
     };
   }
 

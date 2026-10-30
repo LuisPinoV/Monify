@@ -312,6 +312,48 @@ async function rechazaEnBd(bd, sql, parametros = []) {
         espera(await api('GET', '/billeteras', { token: tA }), 403);
         return `evento #${ultimo.idEvento} ${ultimo.finalidad}:${ultimo.accion} canal=${ultimo.canal}; la API bloquea al titular de inmediato`;
       });
+      await prueba('BDD v5: cada tabla del diagrama tiene isBlocked, createdAt y updatedAt', async () => {
+        const tablas = ['Usuario', 'AdministradorRiesgo', 'CredAuthUser', 'CredAuthAdministrador', 'Finalidad', 'UserConsent',
+          'VerificadorDeIdentidad', 'ConsultaDeRiesgo', 'Deuda', 'Tarjeta', 'Banco', 'Billetera', 'Transaccion',
+          'Credito', 'SolicitudCredito', 'UsuarioCredito', 'EstadoSolicitud'];
+        const r = await bd.query(`
+          SELECT table_name, count(*)::int AS n FROM information_schema.columns
+          WHERE table_schema = current_schema() AND table_name = ANY($1) AND column_name IN ('isBlocked', 'createdAt', 'updatedAt')
+          GROUP BY table_name`, [tablas]);
+        assert.deepEqual(r.rows.filter((f) => f.n === 3).map((f) => f.table_name).sort(), [...tablas].sort());
+        return `${tablas.length} tablas`;
+      });
+      await prueba('BDD v5: columnas renombradas y Transaccion con PK (idTransaccion, idTarjeta)', async () => {
+        const columnas = (await bd.query(`
+          SELECT table_name || '.' || column_name AS c FROM information_schema.columns
+          WHERE table_schema = current_schema() AND table_name IN ('Usuario', 'AdministradorRiesgo', 'ConsultaDeRiesgo', 'Transaccion')`)).rows.map((f) => f.c);
+        for (const c of ['Usuario.rangoRentaMensual', 'Usuario.esMayorDeEdad', 'AdministradorRiesgo.isAccessBlocked', 'ConsultaDeRiesgo.scoreDeRiesgo']) assert.ok(columnas.includes(c), c);
+        for (const c of ['Usuario.tramoRenta', 'AdministradorRiesgo.flagAcc', 'ConsultaDeRiesgo.ScoreDeRiesgo', 'Transaccion.idUsuario']) assert.ok(!columnas.includes(c), c);
+        const pk = (await bd.query(`
+          SELECT a.attname FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+          WHERE i.indrelid = '"Transaccion"'::regclass AND i.indisprimary ORDER BY a.attname`)).rows.map((f) => f.attname);
+        assert.deepEqual(pk, ['idTarjeta', 'idTransaccion']);
+        return `PK Transaccion = (${pk.join(', ')})`;
+      });
+      await prueba('BDD v5: updatedAt lo actualiza un trigger en cada cambio', async () => {
+        const antes = (await bd.query('SELECT "updatedAt" FROM "Usuario" WHERE "idUsuario" = $1', [idA])).rows[0].updatedAt;
+        await bd.query('UPDATE "Usuario" SET "isAccessBlocked" = "isAccessBlocked" WHERE "idUsuario" = $1', [idA]);
+        const despues = (await bd.query('SELECT "updatedAt" FROM "Usuario" WHERE "idUsuario" = $1', [idA])).rows[0].updatedAt;
+        assert.ok(despues > antes);
+        return `${antes.toISOString()} → ${despues.toISOString()}`;
+      });
+      await prueba('BDD v5: tras la supresión, los registros conservados quedan con isBlocked', async () => {
+        const r = await bd.query(`
+          SELECT (SELECT "isBlocked" FROM "Usuario" WHERE "idUsuario" = $1) AS usuario,
+                 (SELECT bool_and("isBlocked") FROM "UserConsent" WHERE "idUsuario" = $1) AS consentimientos,
+                 (SELECT count(*)::int FROM "ConsentLogs" WHERE "idUsuario" = $1 AND "accion" = 'otorgado') AS otorgados,
+                 (SELECT count(*)::int FROM "ConsentLogs" WHERE "idUsuario" = $1) AS eventos`, [Number(idB)]);
+        const f = r.rows[0];
+        assert.equal(f.usuario, true);
+        assert.equal(f.consentimientos, true);
+        assert.equal(f.eventos, f.otorgados * 2, 'bloquear no agrega eventos: solo otorgado y revocado');
+        return `Usuario y UserConsent bloqueados; ConsentLogs sin eventos extra (${f.eventos})`;
+      });
     } finally {
       await bd.end();
     }

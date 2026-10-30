@@ -44,12 +44,12 @@ interface FilaUsuario {
   codigoRol: string;
   nombreCompleto: string;
   rut: string;
-  esMayorEdad: boolean;
-  tramoRenta: string | null;
+  esMayorDeEdad: boolean;
+  rangoRentaMensual: string | null;
   numeroCelular: string | null;
   email: string;
   isAccessBlocked: boolean;
-  creadoEn: Date;
+  createdAt: Date;
 }
 
 interface FilaAdministrador {
@@ -58,8 +58,8 @@ interface FilaAdministrador {
   rut: string;
   numeroCelular: string | null;
   email: string;
-  flagAcc: boolean;
-  creadoEn: Date;
+  isAccessBlocked: boolean;
+  createdAt: Date;
 }
 
 function validarTexto(valor: unknown, nombre: string, maximo: number): string {
@@ -167,7 +167,7 @@ export class ServicioUsuarios {
           await this.autenticacion.crearCredencialAdministrador(id, contrasena, tx);
         } else {
           const usuario = await tx.consultar<{ id: number }>(`
-            INSERT INTO "Usuario" ("idRol", "nombreCompleto", "rut", "rutHash", "esMayorEdad", "tramoRenta", "numeroCelular", "email", "emailHash")
+            INSERT INTO "Usuario" ("idRol", "nombreCompleto", "rut", "rutHash", "esMayorDeEdad", "rangoRentaMensual", "numeroCelular", "email", "emailHash")
             VALUES ((SELECT "idRol" FROM "Rol" WHERE "codigoRol" = $1), $2, $3, $4, $5, $6, $7, $8, $9) RETURNING "idUsuario" AS id
           `, [CODIGO_ROL[rol], seudonimoNombre, seudonimoRut, rutHash, mayorEdad, tramo, seudonimoCelular, seudonimoCorreo, emailHash]);
           id = usuario.rows[0].id;
@@ -217,7 +217,7 @@ export class ServicioUsuarios {
       if (!fila) throw new NotFoundException('cuenta no encontrada');
       return {
         id: String(fila.idAdminRiesgo), cuenta: 'administrador_riesgo', rol: 'administrador_riesgo',
-        ...(await this.revelarDatosPersonales(fila)), bloqueada: fila.flagAcc, creadoEn: new Date(fila.creadoEn).toISOString()
+        ...(await this.revelarDatosPersonales(fila)), bloqueada: fila.isAccessBlocked, creadoEn: new Date(fila.createdAt).toISOString()
       };
     }
     const resultado = await this.baseDatos.consultar<FilaUsuario>(`
@@ -226,22 +226,22 @@ export class ServicioUsuarios {
     const fila = resultado.rows[0];
     const rol = fila ? rolDesdeCodigo(fila.codigoRol) : undefined;
     if (!fila || !rol) throw new NotFoundException('cuenta no encontrada');
-    const tramo = this.persistenciaCifrada.revelarCampo<string>(fila.tramoRenta) ?? undefined;
+    const tramo = this.persistenciaCifrada.revelarCampo<string>(fila.rangoRentaMensual) ?? undefined;
     return {
       id: String(fila.idUsuario), cuenta: 'usuario', rol, ...(await this.revelarDatosPersonales(fila)),
-      esMayorEdad: fila.esMayorEdad, tramoRenta: tramo, tramoRentaEtiqueta: etiquetaTramoRenta(tramo),
-      bloqueada: fila.isAccessBlocked, creadoEn: new Date(fila.creadoEn).toISOString()
+      esMayorEdad: fila.esMayorDeEdad, tramoRenta: tramo, tramoRentaEtiqueta: etiquetaTramoRenta(tramo),
+      bloqueada: fila.isAccessBlocked, creadoEn: new Date(fila.createdAt).toISOString()
     };
   }
 
   // Lista de cuentas para el personal: solo seudónimos, sin datos personales ni financieros.
   async listar(): Promise<ResumenCuenta[]> {
     const usuarios = await this.baseDatos.consultar<{ id: number; codigoRol: string; nombre: string; bloqueada: boolean; estadoCuenta: string; creadoEn: Date }>(`
-      SELECT u."idUsuario" AS id, r."codigoRol", u."nombreCompleto" AS nombre, u."isAccessBlocked" AS bloqueada, u."estadoCuenta", u."creadoEn"
+      SELECT u."idUsuario" AS id, r."codigoRol", u."nombreCompleto" AS nombre, u."isAccessBlocked" AS bloqueada, u."estadoCuenta", u."createdAt" AS "creadoEn"
       FROM "Usuario" u JOIN "Rol" r ON r."idRol" = u."idRol" ORDER BY u."idUsuario"
     `);
     const administradores = await this.baseDatos.consultar<{ id: number; nombre: string; bloqueada: boolean; creadoEn: Date }>(`
-      SELECT "idAdminRiesgo" AS id, "nombreCompleto" AS nombre, "flagAcc" AS bloqueada, "creadoEn" FROM "AdministradorRiesgo" ORDER BY "idAdminRiesgo"
+      SELECT "idAdminRiesgo" AS id, "nombreCompleto" AS nombre, "isAccessBlocked" AS bloqueada, "createdAt" AS "creadoEn" FROM "AdministradorRiesgo" ORDER BY "idAdminRiesgo"
     `);
     return [
       ...usuarios.rows.flatMap((fila) => {
@@ -329,7 +329,7 @@ export class ServicioUsuarios {
     if (cambios.rentaMensual !== undefined) {
       // Se guarda solo el nuevo tramo; las próximas evaluaciones de riesgo lo usan automáticamente.
       await this.baseDatos.consultar(
-        'UPDATE "Usuario" SET "tramoRenta" = $2 WHERE "idUsuario" = $1',
+        'UPDATE "Usuario" SET "rangoRentaMensual" = $2 WHERE "idUsuario" = $1',
         [usuarioId, this.persistenciaCifrada.protegerCampo(tramoRenta(cambios.rentaMensual))]
       );
       aplicados.push('rentaMensual');
@@ -343,7 +343,7 @@ export class ServicioUsuarios {
     }
     const [tabla, columnaId, columnaBloqueo, credenciales] = cuenta === 'usuario'
       ? ['Usuario', 'idUsuario', 'isAccessBlocked', 'CredAuthUser']
-      : ['AdministradorRiesgo', 'idAdminRiesgo', 'flagAcc', 'CredAuthAdministrador'];
+      : ['AdministradorRiesgo', 'idAdminRiesgo', 'isAccessBlocked', 'CredAuthAdministrador'];
     const resultado = await this.baseDatos.consultar(
       `UPDATE "${tabla}" SET "${columnaBloqueo}" = $2 WHERE "${columnaId}" = $1 ${cuenta === 'usuario' ? `AND "estadoCuenta" = 'activa'` : ''}`, [id, bloqueada]
     );
@@ -419,7 +419,7 @@ export class ServicioUsuarios {
       const pendientes = await this.obligacionesPendientes(usuarioId, tx);
       if (pendientes.length > 0) throw new ConflictException(`no se puede suprimir la cuenta mientras tenga: ${pendientes.join(', ')}`);
       await tx.consultar(`
-        UPDATE "Usuario" SET "nombreCompleto" = $2, "rut" = $3, "rutHash" = NULL, "numeroCelular" = NULL, "tramoRenta" = NULL,
+        UPDATE "Usuario" SET "nombreCompleto" = $2, "rut" = $3, "rutHash" = NULL, "numeroCelular" = NULL, "rangoRentaMensual" = NULL,
                "email" = $4, "emailHash" = NULL, "isAccessBlocked" = TRUE, "estadoCuenta" = 'eliminada'
         WHERE "idUsuario" = $1
       `, [usuarioId, generarAnonimo('NOMBRE'), generarAnonimo('RUT'), `${generarAnonimo('CORREO')}@anonimo.monify.invalid`]);
@@ -435,6 +435,7 @@ export class ServicioUsuarios {
       // Los cambios pedidos en rectificaciones anteriores también son datos personales.
       await tx.consultar('UPDATE "SolicitudDerecho" SET "datosSolicitud" = NULL WHERE "idUsuario" = $1', [usuarioId]);
       await this.consentimientos.revocarTodos(tx, usuarioId, contexto);
+      await this.bloquearRegistrosRetenidos(tx, usuarioId);
     });
 
     // Sin el vínculo de la bóveda los seudónimos pasan a ser datos anónimos: no hay vuelta atrás.
@@ -442,6 +443,27 @@ export class ServicioUsuarios {
       await this.seudonimos.eliminar([fila.nombreCompleto, fila.rut, fila.numeroCelular, fila.email]);
     } catch (error) {
       this.logger.error(`Cuenta ${usuarioId} anonimizada pero no se pudo vaciar la bóveda: ${(error as Error).message}`);
+    }
+  }
+
+  // BDD v5: lo que se conserva por obligación legal queda bloqueado ("isBlocked"): no se muestra ni se usa
+  // en operaciones nuevas, pero sigue disponible para una fiscalización.
+  private async bloquearRegistrosRetenidos(tx: Ejecutor, usuarioId: number): Promise<void> {
+    const tarjetas = 'SELECT "idTarjeta" FROM "Billetera" WHERE "idUsuario" = $1';
+    const solicitudes = 'SELECT "idSolicitudCredito" FROM "UsuarioCredito" WHERE "idUsuario" = $1';
+    for (const sql of [
+      `UPDATE "Transaccion" SET "isBlocked" = TRUE WHERE "idTarjeta" IN (${tarjetas})`,
+      `UPDATE "Tarjeta" SET "isBlocked" = TRUE WHERE "idTarjeta" IN (${tarjetas})`,
+      'UPDATE "Billetera" SET "isBlocked" = TRUE WHERE "idUsuario" = $1',
+      'UPDATE "Deuda" SET "isBlocked" = TRUE WHERE "idUsuario" = $1',
+      'UPDATE "ConsultaDeRiesgo" SET "isBlocked" = TRUE WHERE "idUsuario" = $1',
+      'UPDATE "VerificadorDeIdentidad" SET "isBlocked" = TRUE WHERE "idUsuario" = $1',
+      `UPDATE "SolicitudCredito" SET "isBlocked" = TRUE WHERE "idSolicitudCredito" IN (${solicitudes})`,
+      'UPDATE "UsuarioCredito" SET "isBlocked" = TRUE WHERE "idUsuario" = $1',
+      'UPDATE "UserConsent" SET "isBlocked" = TRUE WHERE "idUsuario" = $1',
+      'UPDATE "Usuario" SET "isBlocked" = TRUE WHERE "idUsuario" = $1'
+    ]) {
+      await tx.consultar(sql, [usuarioId]);
     }
   }
 

@@ -75,6 +75,17 @@ Para conservar los datos, usa `docker compose down` sin `-v`.
 | `SolicitudDerecho` | Solicitudes de acceso, rectificación y supresión con sus fechas y plazo. | Trigger: no se borra y solo admite las transiciones del flujo. |
 | `HistorialSolicitudDerecho` | Cada cambio de estado de una solicitud (trigger). | Solo anexado. |
 
+## Cambios del diagrama BDD v5
+
+| Cambio | Detalle |
+| --- | --- |
+| Columnas comunes | `isBlocked`, `createdAt`, `updatedAt` en las 17 tablas del diagrama; `updatedAt` por trigger. |
+| Renombres | `tramoRenta` → `rangoRentaMensual`, `esMayorEdad` → `esMayorDeEdad`, `flagAcc` → `isAccessBlocked`, `ScoreDeRiesgo` → `scoreDeRiesgo`, `creadoEn` → `createdAt`. |
+| `Transaccion` | PK (`idTransaccion`, `idTarjeta`); sin `idUsuario` (el titular sale de `Billetera`). |
+| Supresión | Los registros conservados por obligación legal quedan con `isBlocked = TRUE`. Bloquear un consentimiento no cambia su estado ni agrega eventos a `ConsentLogs`. |
+
+La migración desde la versión anterior está en el mismo `01-monify_schema.sql` y es idempotente.
+
 ## Datos de desarrollo
 
 Desde la Actividad 4 no hay seed SQL: los nombres, RUT, celulares y correos se

@@ -129,8 +129,8 @@ export class ServicioAutenticacion {
     const id = Number(payload.sub);
     if (!Number.isInteger(id)) return null;
     if (payload.cuenta === 'administrador_riesgo') {
-      const admin = await this.baseDatos.consultar<{ flagAcc: boolean }>('SELECT "flagAcc" FROM "AdministradorRiesgo" WHERE "idAdminRiesgo" = $1', [id]);
-      return admin.rows[0] && !admin.rows[0].flagAcc ? { id, cuenta: 'administrador_riesgo', rol: 'administrador_riesgo' } : null;
+      const admin = await this.baseDatos.consultar<{ isAccessBlocked: boolean }>('SELECT "isAccessBlocked" FROM "AdministradorRiesgo" WHERE "idAdminRiesgo" = $1', [id]);
+      return admin.rows[0] && !admin.rows[0].isAccessBlocked ? { id, cuenta: 'administrador_riesgo', rol: 'administrador_riesgo' } : null;
     }
     if (payload.cuenta !== 'usuario') return null;
     const usuario = await this.baseDatos.consultar<{ codigoRol: string; bloqueado: boolean; estadoCuenta: string }>(`
@@ -172,7 +172,7 @@ export class ServicioAutenticacion {
     }
     const administrador = await this.baseDatos.consultar<FilaAdminLogin>(`
       SELECT a."idAdminRiesgo" AS id, c."contraseña" AS "contrasenaHash", c."intentosFallidos",
-             a."flagAcc" AS bloqueada, c."expiraEn"
+             a."isAccessBlocked" AS bloqueada, c."expiraEn"
       FROM "AdministradorRiesgo" a
       JOIN "CredAuthAdministrador" c ON c."idAdminRiesgo" = a."idAdminRiesgo"
       WHERE a."emailHash" = $1
@@ -189,7 +189,7 @@ export class ServicioAutenticacion {
   private tablaCredenciales(cuenta: TipoCuenta) {
     return cuenta === 'usuario'
       ? { credenciales: 'CredAuthUser', cuentas: 'Usuario', columnaId: 'idUsuario', columnaBloqueo: 'isAccessBlocked' }
-      : { credenciales: 'CredAuthAdministrador', cuentas: 'AdministradorRiesgo', columnaId: 'idAdminRiesgo', columnaBloqueo: 'flagAcc' };
+      : { credenciales: 'CredAuthAdministrador', cuentas: 'AdministradorRiesgo', columnaId: 'idAdminRiesgo', columnaBloqueo: 'isAccessBlocked' };
   }
 
   private async registrarIntentoFallido(credencial: CredencialEncontrada, contexto: ContextoCliente): Promise<void> {

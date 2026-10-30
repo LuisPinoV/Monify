@@ -47,7 +47,7 @@ export class ServicioBilleteras {
       FROM "Billetera" w
       JOIN "Tarjeta" t ON t."idTarjeta" = w."idTarjeta"
       JOIN "Banco" b ON b."idBanco" = t."idBanco"
-      WHERE w."idUsuario" = $1 ORDER BY t."idTarjeta"
+      WHERE w."idUsuario" = $1 AND NOT w."isBlocked" ORDER BY t."idTarjeta"
     `, [usuarioId]);
     const tarjetas = resultado.rows.map((fila) => this.mapearTarjeta(fila));
     return {

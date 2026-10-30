@@ -54,11 +54,13 @@ export class ServicioOperacionesFinancieras {
   // ---------------------------------------------------------------- transacciones
 
   async listarTransacciones(alcance: Alcance, usuarioId?: number): Promise<Transaccion[]> {
-    const filtro = condicionAlcance(acotarAlcance(alcance, usuarioId), '"idUsuario"', 1);
+    // BDD v5: la transacción pertenece a una tarjeta; el titular se obtiene a través de su billetera.
+    const filtro = condicionAlcance(acotarAlcance(alcance, usuarioId), 'b."idUsuario"', 1);
     const resultado = await this.baseDatos.consultar<TransaccionRow>(`
-      SELECT "idTransaccion" AS id, "idUsuario" AS "usuarioId", "idTarjeta" AS "tarjetaId", "montoTransaccion" AS monto,
-             "fechaTransaccion" AS "creadaEn", "idEvidencia" AS "evidenciaId"
-      FROM "Transaccion" WHERE ${filtro.sql} ORDER BY "fechaTransaccion" DESC, "idTransaccion" DESC
+      SELECT t."idTransaccion" AS id, b."idUsuario" AS "usuarioId", t."idTarjeta" AS "tarjetaId", t."montoTransaccion" AS monto,
+             t."fechaTransaccion" AS "creadaEn", t."idEvidencia" AS "evidenciaId"
+      FROM "Transaccion" t JOIN "Billetera" b ON b."idTarjeta" = t."idTarjeta"
+      WHERE ${filtro.sql} AND NOT t."isBlocked" ORDER BY t."fechaTransaccion" DESC, t."idTransaccion" DESC
     `, filtro.parametros);
     return resultado.rows.map((fila) => this.mapearTransaccion(fila));
   }
@@ -77,8 +79,8 @@ export class ServicioOperacionesFinancieras {
         datos: { tarjetaId: datos.tarjetaId, tipo: datos.tipo, monto }, contexto
       }, tx);
       const resultado = await tx.consultar<TransaccionRow>(`
-        INSERT INTO "Transaccion" ("idUsuario", "idTarjeta", "montoTransaccion", "idEvidencia") VALUES ($1, $2, $3, $4)
-        RETURNING "idTransaccion" AS id, "idUsuario" AS "usuarioId", "idTarjeta" AS "tarjetaId", "montoTransaccion" AS monto,
+        INSERT INTO "Transaccion" ("idTarjeta", "montoTransaccion", "idEvidencia") VALUES ($2, $3, $4)
+        RETURNING "idTransaccion" AS id, $1::int AS "usuarioId", "idTarjeta" AS "tarjetaId", "montoTransaccion" AS monto,
                   "fechaTransaccion" AS "creadaEn", "idEvidencia" AS "evidenciaId"
       `, [sesion.id, datos.tarjetaId, this.persistenciaCifrada.protegerCampo(movimiento), evidencia.id]);
       await this.billeteras.actualizarSaldo(datos.tarjetaId, nuevoSaldo, tx);
@@ -91,7 +93,7 @@ export class ServicioOperacionesFinancieras {
   async listarDeudas(alcance: Alcance, usuarioId?: number): Promise<Deuda[]> {
     const filtro = condicionAlcance(acotarAlcance(alcance, usuarioId), '"idUsuario"', 1);
     const resultado = await this.baseDatos.consultar<DeudaRow>(
-      `SELECT "idDeuda" AS id, "idUsuario" AS "usuarioId", "montoDeuda" AS monto, "fechaDeuda" AS "creadaEn" FROM "Deuda" WHERE ${filtro.sql} ORDER BY "fechaDeuda" DESC`,
+      `SELECT "idDeuda" AS id, "idUsuario" AS "usuarioId", "montoDeuda" AS monto, "fechaDeuda" AS "creadaEn" FROM "Deuda" WHERE ${filtro.sql} AND NOT "isBlocked" ORDER BY "fechaDeuda" DESC`,
       filtro.parametros
     );
     return resultado.rows.map((fila) => this.mapearDeuda(fila));
@@ -113,7 +115,7 @@ export class ServicioOperacionesFinancieras {
     const resultado = await this.baseDatos.consultar<VerificacionRow>(`
       SELECT "idVerificacion" AS id, "idUsuario" AS "usuarioId", "estadoVerificacion" AS estado, "metodoDeVerificacion" AS metodo,
              "fechaVerificacion", "fechaExpiracion"
-      FROM "VerificadorDeIdentidad" WHERE ${filtro.sql} ORDER BY "idVerificacion"
+      FROM "VerificadorDeIdentidad" WHERE ${filtro.sql} AND NOT "isBlocked" ORDER BY "idVerificacion"
     `, filtro.parametros);
     return resultado.rows.map(mapearVerificacion);
   }
@@ -140,9 +142,9 @@ export class ServicioOperacionesFinancieras {
   async listarConsultasRiesgo(alcance: Alcance, usuarioId?: number): Promise<ConsultaRiesgo[]> {
     const filtro = condicionAlcance(acotarAlcance(alcance, usuarioId), '"idUsuario"', 1);
     const resultado = await this.baseDatos.consultar<RiesgoRow>(`
-      SELECT "idConsulta" AS id, "idUsuario" AS "usuarioId", "ScoreDeRiesgo" AS score, "morosidad", "tiempoDeMorosidad",
+      SELECT "idConsulta" AS id, "idUsuario" AS "usuarioId", "scoreDeRiesgo" AS score, "morosidad", "tiempoDeMorosidad",
              "tiempoEnDeuda", "fechaConsulta" AS "consultadaEn"
-      FROM "ConsultaDeRiesgo" WHERE ${filtro.sql} ORDER BY "fechaConsulta" DESC, "idConsulta" DESC
+      FROM "ConsultaDeRiesgo" WHERE ${filtro.sql} AND NOT "isBlocked" ORDER BY "fechaConsulta" DESC, "idConsulta" DESC
     `, filtro.parametros);
     return resultado.rows.map((fila) => this.mapearRiesgo(fila));
   }
@@ -160,9 +162,9 @@ export class ServicioOperacionesFinancieras {
       return this.persistenciaCifrada.protegerCampoAsimetrico(tramoDias(dias));
     };
     const resultado = await this.insertarConUsuario<RiesgoRow>(`
-      INSERT INTO "ConsultaDeRiesgo" ("idUsuario", "ScoreDeRiesgo", "morosidad", "tiempoDeMorosidad", "tiempoEnDeuda")
+      INSERT INTO "ConsultaDeRiesgo" ("idUsuario", "scoreDeRiesgo", "morosidad", "tiempoDeMorosidad", "tiempoEnDeuda")
       VALUES ($1, $2, $3, $4, $5)
-      RETURNING "idConsulta" AS id, "idUsuario" AS "usuarioId", "ScoreDeRiesgo" AS score, "morosidad", "tiempoDeMorosidad",
+      RETURNING "idConsulta" AS id, "idUsuario" AS "usuarioId", "scoreDeRiesgo" AS score, "morosidad", "tiempoDeMorosidad",
                 "tiempoEnDeuda", "fechaConsulta" AS "consultadaEn"
     `, [
       datos.usuarioId,
@@ -176,7 +178,7 @@ export class ServicioOperacionesFinancieras {
 
   async informacionFinanciera(usuarioId: number): Promise<InformacionFinanciera> {
     const usuario = await this.baseDatos.consultar<{ tramoRenta: string | null; estadoCuenta: string }>(
-      'SELECT "tramoRenta", "estadoCuenta" FROM "Usuario" WHERE "idUsuario" = $1', [usuarioId]
+      'SELECT "rangoRentaMensual" AS "tramoRenta", "estadoCuenta" FROM "Usuario" WHERE "idUsuario" = $1', [usuarioId]
     );
     if (usuario.rows.length === 0) throw new NotFoundException('usuario no encontrado');
     const tramo = this.persistenciaCifrada.revelarCampo<string>(usuario.rows[0].tramoRenta) ?? undefined;

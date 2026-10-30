@@ -106,9 +106,9 @@ seudonimización, RBAC y auditoría) son las mismas en ambos ambientes.
 | Tabla | Campo | Decisión del informe | Implementación |
 | --- | --- | --- | --- |
 | Usuario | `nombreCompleto`, `rut`, `numeroCelular`, `email` | Seudónimo | Palabras o números aleatorios (`Zorro-Azul-1a2b3c`, `ID-0123456789`, `TEL-…`, `u-…@seudonimo.monify.invalid`). El original, cifrado (AES-256-GCM + RSA-OAEP), vive en la bóveda separada `monify_vault`. |
-| Usuario | `fechaNacimiento` | Indicador de mayoría de edad | Se valida al registrar y solo se guarda `esMayorEdad`. |
-| Usuario | `rentaMensual` | Tramo de renta | `tramoRenta` (T1–T5), cifrado. |
-| Usuario / AdministradorRiesgo | `isAccessBlocked` | Conservar / ofuscar | En el administrador de riesgo la columna se llama `flagAcc`. |
+| Usuario | `fechaNacimiento` | Indicador de mayoría de edad | Se valida al registrar y solo se guarda `esMayorDeEdad`. |
+| Usuario | `rentaMensual` | Tramo de renta | `rangoRentaMensual` (tramos T1–T5), cifrado. |
+| Usuario / AdministradorRiesgo | `isAccessBlocked` | Conservar | Mismo nombre en ambas tablas desde el diagrama BDD v5. |
 | Rol (antes TipoUsuario) | `tipoUsuario` | Seudonimizar | Códigos `Tu`, `Ta`, `Tr`, `Tau`, `To`; el significado solo existe en la aplicación. |
 | CredAuthUser | `contraseña` | Solo hash | bcrypt (12 rondas). |
 | CredAuthAdministrador | `contraseña` | Plazo de 24 horas | Columna `expiraEn`; el login se rechaza al vencer y un Admin la restablece. |
@@ -258,6 +258,16 @@ ahí se conecta el proveedor de correo.
 La bitácora (`UserLogs`) registra `derechos.<tipo>.recibida|verificada|ejecutada|rechazada|desistida|descargada`
 con identificadores, nunca el código, la contraseña ni los datos pedidos. Admin y
 Auditor ven `GET /derechos/supervision` (estados, fechas y plazos).
+
+### Diseño de base de datos BDD v5
+
+El esquema sigue el diagrama BDD v5:
+
+- Todas las tablas del diagrama tienen `isBlocked`, `createdAt` y `updatedAt`. `updatedAt` lo mantiene un trigger (`fn_actualizar_updated_at`). `isBlocked` marca los registros que se conservan por obligación legal tras una supresión (transacciones, tarjetas, billetera, deudas, consultas de riesgo, verificaciones, créditos y consentimientos): dejan de mostrarse y de usarse, pero siguen disponibles para una fiscalización.
+- Nombres del diagrama: `Usuario.rangoRentaMensual`, `Usuario.esMayorDeEdad`, `AdministradorRiesgo.isAccessBlocked`, `ConsultaDeRiesgo.scoreDeRiesgo` y `createdAt` en lugar de `creadoEn`.
+- `Transaccion` tiene clave primaria (`idTransaccion`, `idTarjeta`) y ya no guarda `idUsuario`: el titular se obtiene a través de `Billetera`.
+- Las tablas que el diagrama no dibuja (`Rol`, `UserLogs`, `EvidenciaNoRepudio`, `AutorizacionAcceso`, `ConsentLogs`, `SolicitudDerecho`, `HistorialSolicitudDerecho`) se mantienen porque sostienen el RBAC, la auditoría, el no repudio y el ejercicio de derechos.
+- Una base creada con la versión anterior se migra sola al arrancar (renombra columnas, cambia la clave de `Transaccion` y agrega las columnas nuevas), sin perder datos.
 
 ## Protección de datos
 

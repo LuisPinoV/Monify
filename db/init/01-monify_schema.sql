@@ -13,6 +13,28 @@ BEGIN
     END IF;
 END $$;
 
+-- Migración a los nombres de columna del diagrama BDD v5 (solo si la base viene de una versión anterior).
+DO $$
+DECLARE
+    cambio TEXT[];
+BEGIN
+    FOREACH cambio SLICE 1 IN ARRAY ARRAY[
+        ['Usuario', 'tramoRenta', 'rangoRentaMensual'],
+        ['Usuario', 'esMayorEdad', 'esMayorDeEdad'],
+        ['Usuario', 'creadoEn', 'createdAt'],
+        ['AdministradorRiesgo', 'flagAcc', 'isAccessBlocked'],
+        ['AdministradorRiesgo', 'creadoEn', 'createdAt'],
+        ['ConsultaDeRiesgo', 'ScoreDeRiesgo', 'scoreDeRiesgo']
+    ] LOOP
+        IF EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_schema = current_schema() AND table_name = cambio[1] AND column_name = cambio[2])
+           AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_schema = current_schema() AND table_name = cambio[1] AND column_name = cambio[3]) THEN
+            EXECUTE format('ALTER TABLE %I RENAME COLUMN %I TO %I', cambio[1], cambio[2], cambio[3]);
+        END IF;
+    END LOOP;
+END $$;
+
 -- ---------------------------------------------------------------------------
 -- Catálogos
 -- ---------------------------------------------------------------------------
@@ -46,15 +68,15 @@ CREATE TABLE IF NOT EXISTS "Usuario" (
     "nombreCompleto"  TEXT NOT NULL,
     "rut"             TEXT NOT NULL,
     "rutHash"         TEXT,
-    "esMayorEdad"     BOOLEAN NOT NULL,
-    "tramoRenta"      TEXT,
+    "esMayorDeEdad"   BOOLEAN NOT NULL,
+    "rangoRentaMensual" TEXT,
     "numeroCelular"   TEXT,
     "email"           VARCHAR(255) NOT NULL UNIQUE,
     "emailHash"       TEXT,
     "isAccessBlocked" BOOLEAN NOT NULL DEFAULT FALSE,
     "estadoCuenta"    VARCHAR(20) NOT NULL DEFAULT 'activa'
         CHECK ("estadoCuenta" IN ('activa', 'eliminada')),
-    "creadoEn"        TIMESTAMPTZ NOT NULL DEFAULT now()
+    "createdAt"       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS "AdministradorRiesgo" (
@@ -65,9 +87,8 @@ CREATE TABLE IF NOT EXISTS "AdministradorRiesgo" (
     "numeroCelular"  TEXT,
     "email"          VARCHAR(255) NOT NULL UNIQUE,
     "emailHash"      TEXT,
-    -- Nombre ofuscado a propósito: es el indicador de acceso bloqueado.
-    "flagAcc"        BOOLEAN NOT NULL DEFAULT FALSE,
-    "creadoEn"       TIMESTAMPTZ NOT NULL DEFAULT now()
+    "isAccessBlocked" BOOLEAN NOT NULL DEFAULT FALSE,
+    "createdAt"      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS "CredAuthUser" (
@@ -245,6 +266,14 @@ BEGIN
         END IF;
         RETURN NEW;
     END IF;
+    -- Bloqueo (isBlocked) sin cambio de estado: el contenido del consentimiento sigue inmutable.
+    IF NEW."estadoActual" = OLD."estadoActual" THEN
+        IF (NEW."idUsuario", NEW."idFinalidad", NEW."finalidad", NEW."versionTexto", NEW."canal", NEW."otorgado_el", NEW."revocado_el", NEW."idEvidencia", NEW."createdAt")
+           IS DISTINCT FROM (OLD."idUsuario", OLD."idFinalidad", OLD."finalidad", OLD."versionTexto", OLD."canal", OLD."otorgado_el", OLD."revocado_el", OLD."idEvidencia", OLD."createdAt") THEN
+            RAISE EXCEPTION 'Solo se puede cambiar el estado y la fecha de revocación de un consentimiento';
+        END IF;
+        RETURN NEW;
+    END IF;
     IF OLD."estadoActual" <> 'otorgado' OR NEW."estadoActual" NOT IN ('revocado', 'reemplazado') THEN
         RAISE EXCEPTION 'Transición de consentimiento no permitida: % -> %', OLD."estadoActual", NEW."estadoActual";
     END IF;
@@ -259,6 +288,9 @@ $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION fn_consentimiento_log() RETURNS trigger AS $$
 BEGIN
+    IF TG_OP = 'UPDATE' AND NEW."estadoActual" = OLD."estadoActual" THEN
+        RETURN NEW;
+    END IF;
     INSERT INTO "ConsentLogs" ("idUsuario", "canal", "dispositivo", "idFinalidad", "idConsent", "versionTexto", "accion", "estadoAnterior", "estadoNuevo")
     VALUES (NEW."idUsuario", fn_contexto_canal(), fn_contexto_dispositivo(), NEW."idFinalidad", NEW."idConsent", NEW."versionTexto",
             NEW."estadoActual", CASE WHEN TG_OP = 'UPDATE' THEN OLD."estadoActual" END, NEW."estadoActual");
@@ -429,7 +461,7 @@ CREATE TABLE IF NOT EXISTS "ConsultaDeRiesgo" (
     "idConsulta"        INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     "idUsuario"         INTEGER NOT NULL
         REFERENCES "Usuario"("idUsuario") ON DELETE RESTRICT,
-    "ScoreDeRiesgo"     TEXT,
+    "scoreDeRiesgo"     TEXT,
     "morosidad"         TEXT,
     "tiempoDeMorosidad" TEXT,
     "tiempoEnDeuda"     TEXT,
@@ -453,17 +485,26 @@ CREATE TABLE IF NOT EXISTS "Billetera" (
     PRIMARY KEY ("idUsuario", "idTarjeta")
 );
 
+-- BDD v5: la transacción pertenece a la tarjeta; el titular se obtiene por "Billetera" (sin "idUsuario" duplicado).
 CREATE TABLE IF NOT EXISTS "Transaccion" (
     "idTransaccion"    INTEGER GENERATED ALWAYS AS IDENTITY NOT NULL,
-    "idUsuario"        INTEGER NOT NULL
-        REFERENCES "Usuario"("idUsuario") ON DELETE RESTRICT,
     "idTarjeta"        INTEGER NOT NULL
         REFERENCES "Tarjeta"("idTarjeta") ON DELETE RESTRICT,
     "fechaTransaccion" TIMESTAMP NOT NULL DEFAULT now(),
     "montoTransaccion" TEXT NOT NULL,
     "idEvidencia"      UUID REFERENCES "EvidenciaNoRepudio"("idEvidencia") ON DELETE RESTRICT,
-    PRIMARY KEY ("idTransaccion", "idUsuario")
+    PRIMARY KEY ("idTransaccion", "idTarjeta")
 );
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = current_schema() AND table_name = 'Transaccion' AND column_name = 'idUsuario') THEN
+        ALTER TABLE "Transaccion" DROP CONSTRAINT IF EXISTS "Transaccion_pkey";
+        ALTER TABLE "Transaccion" DROP COLUMN "idUsuario";
+        ALTER TABLE "Transaccion" ADD PRIMARY KEY ("idTransaccion", "idTarjeta");
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS "Deuda" (
     "idDeuda"    INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -506,6 +547,38 @@ CREATE TABLE IF NOT EXISTS "UsuarioCredito" (
 );
 
 -- ---------------------------------------------------------------------------
+-- BDD v5: cada tabla del diagrama lleva "isBlocked", "createdAt" y "updatedAt".
+-- "isBlocked" marca el bloqueo de un registro que se conserva por obligación legal
+-- (por ejemplo, tras la supresión de la cuenta): ya no se muestra ni se usa en operaciones.
+-- "updatedAt" lo mantiene un trigger, así no depende de que la aplicación lo recuerde.
+-- ---------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION fn_actualizar_updated_at() RETURNS trigger AS $$
+BEGIN
+    NEW."updatedAt" := clock_timestamp();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DO $$
+DECLARE
+    tabla TEXT;
+BEGIN
+    FOREACH tabla IN ARRAY ARRAY[
+        'Usuario', 'AdministradorRiesgo', 'CredAuthUser', 'CredAuthAdministrador', 'Finalidad', 'UserConsent',
+        'VerificadorDeIdentidad', 'ConsultaDeRiesgo', 'Deuda', 'Tarjeta', 'Banco', 'Billetera', 'Transaccion',
+        'Credito', 'SolicitudCredito', 'UsuarioCredito', 'EstadoSolicitud'
+    ] LOOP
+        EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS "isBlocked" BOOLEAN NOT NULL DEFAULT FALSE', tabla);
+        EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()', tabla);
+        EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now()', tabla);
+        EXECUTE format('DROP TRIGGER IF EXISTS %I ON %I', 'tg_' || lower(tabla) || '_updated_at', tabla);
+        EXECUTE format('CREATE TRIGGER %I BEFORE UPDATE ON %I FOR EACH ROW EXECUTE FUNCTION fn_actualizar_updated_at()',
+                       'tg_' || lower(tabla) || '_updated_at', tabla);
+    END LOOP;
+END $$;
+
+-- ---------------------------------------------------------------------------
 -- Índices
 -- ---------------------------------------------------------------------------
 
@@ -517,7 +590,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS "idx_admin_ruthash" ON "AdministradorRiesgo"("
 CREATE UNIQUE INDEX IF NOT EXISTS "idx_admin_emailhash" ON "AdministradorRiesgo"("emailHash");
 CREATE INDEX IF NOT EXISTS "idx_verificador_usuario" ON "VerificadorDeIdentidad"("idUsuario");
 CREATE INDEX IF NOT EXISTS "idx_consulta_usuario" ON "ConsultaDeRiesgo"("idUsuario");
-CREATE INDEX IF NOT EXISTS "idx_transaccion_usuario" ON "Transaccion"("idUsuario");
 CREATE INDEX IF NOT EXISTS "idx_transaccion_tarjeta" ON "Transaccion"("idTarjeta");
 CREATE INDEX IF NOT EXISTS "idx_deuda_usuario" ON "Deuda"("idUsuario");
 CREATE INDEX IF NOT EXISTS "idx_solicitud_credito" ON "SolicitudCredito"("idCredito");

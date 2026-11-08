@@ -9,7 +9,7 @@ BEGIN
         SELECT 1 FROM information_schema.tables
         WHERE table_schema = current_schema() AND table_name = 'TipoUsuario'
     ) THEN
-        RAISE EXCEPTION 'Esquema anterior detectado (tabla "TipoUsuario"). Recrea la base con "pnpm run db:reset" y luego "pnpm run db:recrear-cifrados".';
+        RAISE EXCEPTION 'Esquema anterior detectado (tabla "TipoUsuario"). Recrea la base con "pnpm run db:reset" y luego "pnpm run db:seed".';
     END IF;
 END $$;
 

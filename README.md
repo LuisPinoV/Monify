@@ -27,7 +27,10 @@ El grupo debe diseñar la plataforma que gestiona: cuentas de usuario, transfere
 
 ### Tecnologías y dependencias
 
-- NestJS 11.2.6
+- NestJS 11.2.6 (`@nestjs/common`, `@nestjs/core`, `@nestjs/platform-express`; `@nestjs/cli` en desarrollo)
+- `@nestjs/config` 12.0.1 (lectura de `.env`)
+- `@nestjs/jwt` 12.0.2 (firma y verificación de JWT)
+- `bcrypt` 6.0.0 (hash de contraseñas y comprobantes KYC)
 - TypeScript 5.9.3
 - `pg` 8.23.0
 - Express 5.2.1, incluido por `@nestjs/platform-express`
@@ -51,7 +54,32 @@ pnpm run desarrollo     # API + panel en http://localhost:3000
 Al iniciar, la API aplica el esquema (`db/init/01-monify_schema.sql`) y crea, si
 no existe, la base separada de la bóveda de seudónimos (`<base>_vault`). Si la
 base fue creada con el diseño anterior (tabla `TipoUsuario`) el arranque se
-detiene: recréala con `pnpm run db:reset` y vuelve a cargar la semilla.
+detiene: recréala con `pnpm run db:reset` y vuelve a cargar la semilla. Una base
+con el diseño de la Actividad 4/5 previo al diagrama BDD v5 sí se migra sola (ver
+"Diseño de base de datos BDD v5").
+
+`GET /salud` (público) responde el estado del servicio y el entorno activo, útil
+para comprobar que la API levantó.
+
+### Variables de entorno
+
+Todas se definen en `.env` (plantilla en `.env.example`). Ninguna clave ni
+contraseña se versiona.
+
+| Variable | Obligatoria | Descripción |
+| --- | --- | --- |
+| `PUERTO` | No (3000) | Puerto HTTP de la API y del panel. |
+| `ENTORNO` | No (`desarrollo`) | `desarrollo` o `produccion`. La semilla solo corre en `desarrollo`; fuera de `produccion` el código de verificación de `/derechos` vuelve en la respuesta. |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Sí (Docker) | Usuario, contraseña y base del contenedor PostgreSQL de `compose.yaml`. |
+| `DB_PORT` | No (5433) | Puerto local publicado por el contenedor. |
+| `DATABASE_URL` | Sí | Conexión a la base principal (debe coincidir con los valores anteriores). |
+| `DATABASE_POOL_MAX` | No (10) | Conexiones máximas del pool de la base principal. |
+| `VAULT_DATABASE_URL` | No | Base separada de la bóveda de seudónimos. Si se omite se usa `<base>_vault` en la misma instancia (se crea sola). `VAULT_POOL_MAX` (5) limita su pool. |
+| `ENCRYPTION_KEY` | Sí | Clave AES-256 en base64 (32 bytes); también es la clave de los índices HMAC. |
+| `RSA_PUBLIC_KEY`, `RSA_PRIVATE_KEY` | Sí | Par RSA en PEM con saltos de línea escapados (`\n`): cifrado asimétrico, híbrido y firmas. |
+| `JWT_SECRET` | Sí | Clave de firma HS256 de los JWT. |
+| `ADMIN_INICIAL_CORREO`, `ADMIN_INICIAL_CONTRASENA` | No | Crean el primer Admin al iniciar si no existe ninguno. `ADMIN_INICIAL_NOMBRE` y `ADMIN_INICIAL_RUT` son opcionales. |
+| `SEED_TITULARES`, `SEED_CONTRASENA` | No (12 / `Monify2026!`) | Cantidad de titulares ficticios y contraseña común de la semilla. |
 
 ### Primer Admin
 
@@ -84,13 +112,25 @@ las cuentas usan la contraseña `Monify2026!` (configurable con `SEED_CONTRASENA
 | `pnpm run db:seed` | Compila y carga los datos ficticios de desarrollo. |
 | `pnpm run db:psql` / `db:logs` | Consola `psql` y logs del contenedor. |
 | `pnpm run desarrollo` | API con recarga automática. |
+| `pnpm run compilar` / `iniciar` | Compila a `dist/` y ejecuta la versión compilada. |
 | `pnpm run prueba:humo` | Prueba de punta a punta contra la API en ejecución (ver abajo). |
 | `pnpm run prueba:seguridad` | Pruebas de los controles de la Actividad 4 (accesos no autorizados rechazados). |
-| `pnpm run prueba:actividad5` | Pruebas de consentimiento y derechos de la Actividad 5, incluidos intentos directos en la base (lee `PUERTO` y `DATABASE_URL` de `.env`). |
+| `pnpm run prueba:actividad5` | Pruebas de consentimiento y derechos de la Actividad 5, incluidos intentos directos en la base y las comprobaciones del diseño BDD v5 (lee `PUERTO` y `DATABASE_URL` de `.env`). |
 
 `prueba:humo` necesita la API corriendo y las credenciales de un Admin, por
 ejemplo con la semilla cargada:
 `BASE_URL=http://localhost:3000 ADMIN_CORREO=admin@monify.dev ADMIN_CONTRASENA=Monify2026! pnpm run prueba:humo`.
+
+### Pruebas y evidencias
+
+Los tres scripts de `scripts/` imprimen cada caso con su resultado (aprobada,
+fallida u omitida) y un detalle verificable (códigos HTTP, ids de eventos,
+huellas), que es la evidencia usada en los informes. `prueba:seguridad` y
+`prueba:actividad5` necesitan la API corriendo con la semilla cargada y nunca
+deben ejecutarse contra producción. Los informes entregados están en la raíz
+(`[Seguridad y Proteccion de Datos] Fun Gang - Actividad 2.pdf` y
+`[Seguridad y Proteccion de Datos] Fun Gang (2).pdf`) y los diagramas de flujo
+en PlantUML, en `diagrams/`.
 
 ### Ambientes
 
@@ -183,6 +223,7 @@ eliminación. Cada persona ve su propia actividad en `GET /usuarios/me/actividad
 | `POST /usuarios` | Público: autoregistro con aceptación del TOS. |
 | `POST /auth/login` | Público. Bloqueo tras 5 intentos fallidos. |
 | `GET /terminos` | Público. |
+| `GET /salud` | Público: estado del servicio y entorno. |
 | `GET /usuarios/me` | Perfil propio. La corrección, la copia y la eliminación se piden en `/derechos`. |
 | `GET /usuarios/me/actividad` | Bitácora propia. |
 | `GET /billeteras`, `POST /tarjetas`, `GET /bancos` | Billetera propia. |
@@ -193,7 +234,7 @@ eliminación. Cada persona ve su propia actividad en `GET /usuarios/me/actividad
 | `GET /consentimientos`, `GET /consentimientos/historial`, `POST /consentimientos/otorgar`, `POST /consentimientos/:finalidad/revocar`, `POST /consentimientos/rechazar` | Titular (disponibles aunque falte un consentimiento). |
 | `GET/POST /derechos/solicitudes`, `POST /derechos/solicitudes/:id/verificar`, `POST /derechos/solicitudes/:id/desistir`, `GET /derechos/solicitudes/:id/descarga` | Titular (disponibles aunque falte un consentimiento). |
 | `GET /derechos/supervision` | Admin y Auditor: estados y plazos, sin los datos pedidos. |
-| `GET/POST /autorizaciones`, `DELETE /autorizaciones/:id` | Titular y Auditor. |
+| `GET/POST /autorizaciones`, `DELETE /autorizaciones/:id`, `GET /autorizaciones/beneficiarios` | Titular y Auditor. `beneficiarios` lista a quién se puede otorgar acceso (Auditores y Operadores para un titular; Admins para un Auditor), solo con seudónimos. |
 | `GET /usuarios`, `PATCH /usuarios/:id/bloqueo` | Personal (seudónimos) / Admin. |
 | `POST /admin/cuentas`, `PATCH /admin/usuarios/:id/rol`, `POST /admin/cuentas/:id/contrasena` | Admin. |
 | `GET /rbac/matriz`, `GET /rbac/mis-permisos` | Admin / cualquier sesión. |
@@ -251,9 +292,10 @@ el plazo de respuesta (30 días corridos). Hay una sola solicitud abierta por ti
 
 El código de un solo uso dura 10 minutos, se guarda solo como HMAC y admite 5
 intentos. **Limitación:** el proyecto no tiene servidor de correo; el envío se
-simula en `ServicioNotificaciones` y, en `ENTORNO=desarrollo`, el código vuelve
-en la respuesta (`codigoDesarrollo`) para poder probar el flujo. En producción
-ahí se conecta el proveedor de correo.
+simula en `ServicioNotificaciones` y, siempre que `ENTORNO` no sea `produccion`
+(también si la variable falta), el código vuelve en la respuesta
+(`codigoDesarrollo`) para poder probar el flujo; nunca se escribe en la base. En
+producción ahí se conecta el proveedor de correo.
 
 La bitácora (`UserLogs`) registra `derechos.<tipo>.recibida|verificada|ejecutada|rechazada|desistida|descargada`
 con identificadores, nunca el código, la contraseña ni los datos pedidos. Admin y
@@ -289,32 +331,37 @@ El módulo global `src/seguridad` contiene `ServicioCifrado` (AES-256-GCM con
 ### Cómo se cifra y descifra cada dato
 
 El flujo es el mismo para cualquier endpoint que escriba o lea un campo
-sensible, y siempre pasa por `ServicioCifrado`, nunca por el controller:
+sensible, y siempre pasa por `PersistenciaCifrada` / `ServicioCifrado`, nunca
+por el controller:
 
-1. La API recibe el dato en texto plano a través de HTTPS (ver sección de
-   cifrado en tránsito).
-2. El service correspondiente (`ServicioUsuarios`, `ServicioFinanciero`, etc.)
-   recibe el payload y lo cifra usando AES - 256, generando el Ciphertext, IV y el AuthTag.
-3. Las 3 claves se concatenan y se guardan en la columna correspondiente (si se cifro un nombre se guarda en la columna nombre)
-4. De esta forma la clave no queda en texto plano a menos que se aplique la clave de descifrado.
+1. La API recibe el dato en texto plano en el cuerpo de la petición.
+2. El service correspondiente (`ServicioUsuarios`, `ServicioBilleteras`,
+   `ServicioOperacionesFinancieras`, `ServicioAuditoria`, `ServicioDerechos` o
+   `ServicioSeudonimos`) lo cifra con la técnica que le corresponde según la
+   tabla anterior.
+3. El resultado se guarda como un único texto con prefijo de versión en la misma
+   columna del dato (`v1.` simétrico, `va1.` asimétrico, `vh1.` híbrido). Al leer,
+   `decryptPacked` reconoce el prefijo y aplica el descifrado correspondiente.
+4. Así el valor nunca queda en texto plano en la base: solo se recupera con las
+   claves del `.env`.
 
-**Cifrado simétrico (AES-256-GCM)** — para nombre, fecha de nacimiento, saldo,
-renta, celular y montos de transacciones. Cada vez que se cifra un valor se
-genera un IV aleatorio nuevo (nunca se reutiliza con la misma clave), y GCM
-produce además un `authTag`. Al descifrar, recalcula el tag
-y lo compara con el guardado: si no coinciden —porque alguien modificó el
-valor cifrado directamente en la base, por ejemplo— el descifrado falla en
-vez de devolver un dato corrupto sin avisar.
+> El transporte cifrado (HTTPS/TLS) no lo implementa la aplicación: el servidor
+> de desarrollo escucha en HTTP y en un despliegue real TLS debe terminarse en un
+> proxy inverso o balanceador delante de la API.
 
-```json
-{
-  "ciphertext": "xS0+nGeT9Ns=",
-  "iv": "vVxihPtjklFlr9Cc",
-  "authTag": "S5xfVkstZqljq6pYNqMcSg=="
-}
+**Cifrado simétrico (AES-256-GCM)** — para el tramo de renta, el número de
+tarjeta, los saldos, los montos de transacciones y el detalle de la bitácora.
+Cada vez que se cifra un valor se genera un IV aleatorio nuevo (nunca se
+reutiliza con la misma clave), y GCM produce además un `authTag`. Al descifrar,
+recalcula el tag y lo compara con el guardado: si no coinciden —porque alguien
+modificó el valor cifrado directamente en la base, por ejemplo— el descifrado
+falla en vez de devolver un dato corrupto sin avisar.
+
+```text
+v1.<iv>.<authTag>.<ciphertext>        (cada parte en base64)
 ```
 
-**Cifrado asimétrico (RSA-OAEP)** — para montos de deudas, créditos,
+**Cifrado asimétrico (RSA-OAEP con SHA-256)** — para montos de deudas, créditos,
 solicitudes, score, morosidad y datos de riesgo. El cifrado se hace con
 `RSA_PUBLIC_KEY`, así que cualquier parte del sistema que necesite *escribir*
 estos campos puede hacerlo sin tener acceso a la clave privada. Solo
@@ -323,38 +370,32 @@ un despliegue real— puede descifrarlos. Esto da una capa extra de defensa: un
 atacante que solo comprometa el proceso que escribe datos no puede leer los
 que ya están cifrados.
 
-```json
-{
-  "ciphertext": "Qm1z9FhC2...=="
-}
+```text
+va1.<ciphertext>
 ```
 
-**Cifrado híbrido (envelope encryption)** — exclusivo para el RUT. RSA no se
-usa para cifrar el valor directamente; en vez de eso:
-1. Se genera una clave AES de un solo uso (clave de datos) para ese registro.
-2. El RUT se cifra con esa clave usando AES-256-GCM (igual que en el caso
-   simétrico: ciphertext + iv + authTag).
+**Cifrado híbrido (envelope encryption)** — para los datos personales originales
+que guarda la bóveda de seudónimos: nombre, RUT, celular y correo. RSA no se usa
+para cifrar el valor directamente; en vez de eso:
+1. Se genera una clave AES-256 de un solo uso (clave de datos) para ese valor.
+2. El valor se cifra con esa clave usando AES-256-GCM (iv + authTag + ciphertext).
 3. La clave de datos se cifra con `RSA_PUBLIC_KEY` (RSA-OAEP) y se guarda junto
    al resto.
 
-```json
-{
-  "ciphertext": "ZP4p1TqV+LQwMSYs",
-  "iv": "h1oESW1QOQSMbINu",
-  "authTag": "96kH/KytKpADtD29X2eR1w==",
-  "claveEnvuelta": "Qm1z9FhC2...=="
-}
+```text
+vh1.<claveEnvuelta>.<iv>.<authTag>.<ciphertext>
 ```
 
 Esto evita el límite de tamaño de RSA (no se puede cifrar directamente texto
-largo con RSA-OAEP) y es la razón por la que el RUT ya no admite búsqueda por
-igualdad en SQL sobre el valor cifrado. Para detectar duplicados y para el login
-se guarda además un índice determinista (`rutHash`, `emailHash`): un HMAC-SHA256
-con `ENCRYPTION_KEY`, que permite comparar por igualdad sin poder revertirse.
+largo con RSA-OAEP). Como el valor cifrado cambia cada vez, no admite búsqueda
+por igualdad en SQL: para detectar duplicados y para el login se guarda además
+un índice determinista (`rutHash`, `emailHash`), un HMAC-SHA256 con
+`ENCRYPTION_KEY` que permite comparar por igualdad sin poder revertirse.
 
 > Desde la Actividad 4 el RUT, el nombre, el celular y el correo ya no se guardan
 > en la base principal: allí solo hay seudónimos y el valor original cifrado con
 > este esquema híbrido vive en la bóveda (`BovedaSeudonimos`, base `monify_vault`).
+> La fecha de nacimiento no se guarda: solo se valida y se registra `esMayorDeEdad`.
 
 Genera una clave para desarrollo con:
 

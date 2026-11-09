@@ -36,7 +36,7 @@ export const ACCIONES = [
   'kyc.registrar',
   'consentimiento.gestionar',
   'autorizacion.gestionar',
-  // Actividad 5: ejercicio de derechos (acceso y portabilidad, rectificación, supresión)
+  // Actividades 5 y 6: ejercicio de derechos (acceso y portabilidad, rectificación, supresión y oposición)
   'derechos.ejercer',
   'derechos.supervisar'
 ] as const;

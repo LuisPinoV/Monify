@@ -13,7 +13,28 @@ import { HORAS_VIGENCIA_CONTRASENA_ADMIN, normalizarCorreo, ServicioAutenticacio
 import { ServicioBilleteras } from '../billeteras/servicio-billeteras';
 import { ServicioOperacionesFinancieras } from '../operaciones-financieras/servicio-operaciones-financieras';
 import { ServicioConsentimientos, type AceptacionFinalidades } from '../terminos/servicio-consentimientos';
+import { ServicioOposiciones } from '../terminos/servicio-oposiciones';
 import { FINALIDADES_OBLIGATORIAS, SALDO_PARA_CERRAR_CUENTA, VERSION_TERMINOS } from '../terminos/terminos';
+
+// Actividad 6, punto 5: qué se eliminó, qué quedó bloqueado por obligación legal y a dónde se propagó una supresión.
+export interface InformeSupresion {
+  eliminado: string[];
+  bloqueadoPorObligacionLegal: { tabla: string; registros: number; motivo: string }[];
+  propagacion: { destino: string; accion: string; estado: 'aplicada' | 'pendiente' }[];
+}
+
+const MOTIVO_RETENCION: Record<string, string> = {
+  Transaccion: 'trazabilidad financiera y prevención de lavado de activos (Ley 19.913)',
+  Tarjeta: 'respaldo de las transacciones conservadas (número anonimizado)',
+  Billetera: 'respaldo contable de los movimientos',
+  Deuda: 'obligación contractual y contable',
+  ConsultaDeRiesgo: 'respaldo de las decisiones de crédito ya tomadas',
+  VerificadorDeIdentidad: 'prueba de la debida diligencia KYC (sin comprobante ni método)',
+  SolicitudCredito: 'respaldo de las decisiones de crédito ya tomadas',
+  UsuarioCredito: 'respaldo de los créditos otorgados',
+  UserConsent: 'prueba de la base de licitud de los tratamientos pasados',
+  Usuario: 'ancla anónima de los registros conservados'
+};
 
 export const ROLES_PERSONAL: Rol[] = ['admin', 'administrador_riesgo', 'auditor', 'operador_financiero'];
 const ROLES_CAMBIABLES: Rol[] = ['admin', 'auditor', 'operador_financiero'];
@@ -96,7 +117,8 @@ export class ServicioUsuarios {
     private readonly noRepudio: ServicioNoRepudio,
     private readonly auditoria: ServicioAuditoria,
     private readonly billeteras: ServicioBilleteras,
-    private readonly operaciones: ServicioOperacionesFinancieras
+    private readonly operaciones: ServicioOperacionesFinancieras,
+    private readonly oposiciones: ServicioOposiciones
   ) {}
 
   // ---------------------------------------------------------------- altas
@@ -300,12 +322,24 @@ export class ServicioUsuarios {
 
   // Aplica una rectificación ya verificada. Los seudónimos no cambian (solo el valor en la bóveda), así que los demás
   // módulos, la bitácora y las evidencias siguen apuntando al mismo titular sin actualizarse.
-  async aplicarRectificacion(usuarioId: number, cambios: CambiosRectificacion): Promise<string[]> {
-    const resultado = await this.baseDatos.consultar<{ nombreCompleto: string; numeroCelular: string | null; email: string }>(
-      `SELECT "nombreCompleto", "numeroCelular", "email" FROM "Usuario" WHERE "idUsuario" = $1 AND "estadoCuenta" = 'activa'`, [usuarioId]
+  // Actividad 6: cada campo cambiado queda en "RegistroRectificacion" (qué campo, cuándo y por qué solicitud) con huellas
+  // HMAC del valor anterior y del nuevo: el cambio se puede comprobar sin guardar los datos en claro.
+  async aplicarRectificacion(usuarioId: number, cambios: CambiosRectificacion, solicitudId?: number): Promise<string[]> {
+    const resultado = await this.baseDatos.consultar<{ nombreCompleto: string; numeroCelular: string | null; email: string; rangoRentaMensual: string | null }>(
+      `SELECT "nombreCompleto", "numeroCelular", "email", "rangoRentaMensual" FROM "Usuario" WHERE "idUsuario" = $1 AND "estadoCuenta" = 'activa'`, [usuarioId]
     );
     const fila = resultado.rows[0];
     if (!fila) throw new NotFoundException('cuenta no encontrada');
+    const anteriores: Record<string, string | null> = {
+      nombre: await this.seudonimos.revelar(fila.nombreCompleto),
+      numeroCelular: await this.seudonimos.revelar(fila.numeroCelular),
+      correo: await this.seudonimos.revelar(fila.email),
+      rentaMensual: this.persistenciaCifrada.revelarCampo<string>(fila.rangoRentaMensual)
+    };
+    const nuevos: Record<string, string | undefined> = {
+      nombre: cambios.nombre, numeroCelular: cambios.numeroCelular, correo: cambios.correo,
+      rentaMensual: cambios.rentaMensual === undefined ? undefined : tramoRenta(cambios.rentaMensual)
+    };
     const aplicados: string[] = [];
     if (cambios.nombre !== undefined) {
       await this.seudonimos.actualizar(fila.nombreCompleto, cambios.nombre);
@@ -334,7 +368,24 @@ export class ServicioUsuarios {
       );
       aplicados.push('rentaMensual');
     }
+    if (solicitudId !== undefined) {
+      const huella = (campo: string, valor: string | null | undefined) =>
+        valor === null || valor === undefined ? null : this.persistenciaCifrada.indiceBusqueda(`rectificacion:${campo}:${valor}`);
+      for (const campo of aplicados) {
+        await this.baseDatos.consultar(
+          'INSERT INTO "RegistroRectificacion" ("idSolicitudDerecho", "idUsuario", "campo", "huellaAnterior", "huellaNueva") VALUES ($1, $2, $3, $4, $5)',
+          [solicitudId, usuarioId, campo, huella(campo, anteriores[campo]), huella(campo, nuevos[campo])]
+        );
+      }
+    }
     return aplicados;
+  }
+
+  async historialRectificaciones(usuarioId: number): Promise<{ solicitudId: string; campo: string; fecha: string }[]> {
+    const resultado = await this.baseDatos.consultar<{ idSolicitudDerecho: number; campo: string; fecha: Date }>(
+      'SELECT "idSolicitudDerecho", "campo", "fecha" FROM "RegistroRectificacion" WHERE "idUsuario" = $1 ORDER BY "idRegistro"', [usuarioId]
+    );
+    return resultado.rows.map((fila) => ({ solicitudId: String(fila.idSolicitudDerecho), campo: fila.campo, fecha: new Date(fila.fecha).toISOString() }));
   }
 
   async establecerBloqueo(actor: Sesion, cuenta: 'usuario' | 'administrador_riesgo', id: number, bloqueada: boolean): Promise<ResumenCuenta> {
@@ -407,14 +458,14 @@ export class ServicioUsuarios {
 
   // Supresión (ya verificada y evaluada): anonimiza los datos personales de forma irreversible.
   // Se conservan, sin identificar al titular, los registros con obligación legal de retención.
-  async anonimizarCuenta(usuarioId: number, contexto: ContextoCliente): Promise<void> {
+  async anonimizarCuenta(usuarioId: number, contexto: ContextoCliente): Promise<InformeSupresion> {
     const actual = await this.baseDatos.consultar<{ nombreCompleto: string; rut: string; numeroCelular: string | null; email: string }>(
       'SELECT "nombreCompleto", "rut", "numeroCelular", "email" FROM "Usuario" WHERE "idUsuario" = $1 AND "estadoCuenta" = \'activa\'', [usuarioId]
     );
     if (actual.rows.length === 0) throw new NotFoundException('cuenta no encontrada');
     const fila = actual.rows[0];
 
-    await this.baseDatos.transaccion(async (tx) => {
+    const bloqueados = await this.baseDatos.transaccion(async (tx) => {
       await tx.consultar('SELECT 1 FROM "Usuario" WHERE "idUsuario" = $1 FOR UPDATE', [usuarioId]);
       const pendientes = await this.obligacionesPendientes(usuarioId, tx);
       if (pendientes.length > 0) throw new ConflictException(`no se puede suprimir la cuenta mientras tenga: ${pendientes.join(', ')}`);
@@ -434,23 +485,52 @@ export class ServicioUsuarios {
       );
       // Los cambios pedidos en rectificaciones anteriores también son datos personales.
       await tx.consultar('UPDATE "SolicitudDerecho" SET "datosSolicitud" = NULL WHERE "idUsuario" = $1', [usuarioId]);
+      // Las huellas de las rectificaciones también se borran: queda solo qué campo cambió y cuándo.
+      await tx.consultar('UPDATE "RegistroRectificacion" SET "huellaAnterior" = NULL, "huellaNueva" = NULL WHERE "idUsuario" = $1', [usuarioId]);
       await this.consentimientos.revocarTodos(tx, usuarioId, contexto);
-      await this.bloquearRegistrosRetenidos(tx, usuarioId);
+      return this.bloquearRegistrosRetenidos(tx, usuarioId);
     });
 
     // Sin el vínculo de la bóveda los seudónimos pasan a ser datos anónimos: no hay vuelta atrás.
+    let bovedaVaciada = true;
     try {
       await this.seudonimos.eliminar([fila.nombreCompleto, fila.rut, fila.numeroCelular, fila.email]);
     } catch (error) {
+      bovedaVaciada = false;
       this.logger.error(`Cuenta ${usuarioId} anonimizada pero no se pudo vaciar la bóveda: ${(error as Error).message}`);
     }
+
+    return {
+      eliminado: [
+        'nombre, RUT, celular y correo originales (bóveda de seudónimos)',
+        'seudónimos de la cuenta (reemplazados por valores ANON-…) e índices HMAC de RUT y correo',
+        'tramo de renta mensual',
+        'credencial de acceso (hash de la contraseña)',
+        'número de las tarjetas (anonimizado)',
+        'comprobante y método de la verificación de identidad',
+        'cambios pedidos en solicitudes de derechos y huellas de las rectificaciones',
+        'consentimientos vigentes (revocados) y autorizaciones de acceso (revocadas)'
+      ],
+      bloqueadoPorObligacionLegal: Object.entries(bloqueados)
+        .filter(([, registros]) => registros > 0)
+        .map(([tabla, registros]) => ({ tabla, registros, motivo: MOTIVO_RETENCION[tabla] ?? 'obligación legal' })),
+      propagacion: [
+        { destino: 'Base principal', accion: 'anonimización y bloqueo (isBlocked) en una sola transacción', estado: 'aplicada' },
+        { destino: 'Bóveda de seudónimos (base separada)', accion: 'eliminación de los vínculos seudónimo → dato original', estado: bovedaVaciada ? 'aplicada' : 'pendiente' },
+        { destino: 'Sesiones activas', accion: 'el guard rechaza el JWT porque la cuenta ya no está activa', estado: 'aplicada' },
+        { destino: 'Bitácora y evidencias de no repudio', accion: 'se conservan; solo contienen seudónimos que ya no se pueden revertir', estado: 'aplicada' },
+        { destino: 'Respaldos cifrados', accion: 'solo contienen seudónimos; se renuevan en su ciclo de rotación', estado: 'pendiente' },
+        { destino: 'Entidad verificadora de identidad y central de riesgo (terceros)', accion: 'aviso de supresión para que dejen de tratar los datos (simulado: queda en la bitácora)', estado: 'aplicada' }
+      ]
+    };
   }
 
   // BDD v5: lo que se conserva por obligación legal queda bloqueado ("isBlocked"): no se muestra ni se usa
   // en operaciones nuevas, pero sigue disponible para una fiscalización.
-  private async bloquearRegistrosRetenidos(tx: Ejecutor, usuarioId: number): Promise<void> {
+  private async bloquearRegistrosRetenidos(tx: Ejecutor, usuarioId: number): Promise<Record<string, number>> {
     const tarjetas = 'SELECT "idTarjeta" FROM "Billetera" WHERE "idUsuario" = $1';
     const solicitudes = 'SELECT "idSolicitudCredito" FROM "UsuarioCredito" WHERE "idUsuario" = $1';
+    const bloqueados: Record<string, number> = {};
     for (const sql of [
       `UPDATE "Transaccion" SET "isBlocked" = TRUE WHERE "idTarjeta" IN (${tarjetas})`,
       `UPDATE "Tarjeta" SET "isBlocked" = TRUE WHERE "idTarjeta" IN (${tarjetas})`,
@@ -463,8 +543,10 @@ export class ServicioUsuarios {
       'UPDATE "UserConsent" SET "isBlocked" = TRUE WHERE "idUsuario" = $1',
       'UPDATE "Usuario" SET "isBlocked" = TRUE WHERE "idUsuario" = $1'
     ]) {
-      await tx.consultar(sql, [usuarioId]);
+      const resultado = await tx.consultar(sql, [usuarioId]);
+      bloqueados[/UPDATE "(\w+)"/.exec(sql)![1]] = resultado.rowCount ?? 0;
     }
+    return bloqueados;
   }
 
   // Condiciones de la sección 7 de los términos: obligaciones que justifican conservar los datos y rechazar la supresión.
@@ -486,17 +568,19 @@ export class ServicioUsuarios {
   async datosParaExportar(usuarioId: number) {
     const sesion: Sesion = { id: usuarioId, cuenta: 'usuario', rol: 'usuario' };
     const alcance = { tipo: 'ids' as const, ids: [usuarioId] };
-    const [perfil, billetera, transacciones, deudas, solicitudes, consultasRiesgo, verificaciones, consentimientos, historialConsentimientos, actividad] = await Promise.all([
+    const [perfil, billetera, transacciones, deudas, solicitudes, consultasRiesgo, verificaciones, consentimientos, historialConsentimientos, actividad, rectificaciones, oposiciones] = await Promise.all([
       this.obtenerPerfil(sesion),
       this.billeteras.obtenerBilletera(usuarioId),
       this.operaciones.listarTransacciones(alcance),
       this.operaciones.listarDeudas(alcance),
       this.operaciones.listarSolicitudes(alcance),
-      this.operaciones.listarConsultasRiesgo(alcance),
+      this.operaciones.listarConsultasRiesgo(alcance, undefined, { incluirBloqueados: true }),
       this.operaciones.listarVerificaciones(alcance),
       this.consentimientos.estado(usuarioId),
       this.consentimientos.historial(usuarioId, 500),
-      this.auditoria.listar({ usuarioId, limite: 500 })
+      this.auditoria.listar({ usuarioId, limite: 500 }),
+      this.historialRectificaciones(usuarioId),
+      this.oposiciones.listar(usuarioId)
     ]);
     const { id: _id, cuenta: _cuenta, rol: _rol, bloqueada: _bloqueada, ...datosPersonales } = perfil;
     return {
@@ -509,7 +593,9 @@ export class ServicioUsuarios {
       verificacionesIdentidad: verificaciones.map(({ usuarioId: _u, ...verificacion }) => verificacion),
       consentimientos: consentimientos.finalidades.map(({ finalidad, estado, versionTexto, canal, otorgadoEl, revocadoEl }) => ({ finalidad, estado, versionTexto, canal, otorgadoEl, revocadoEl })),
       historialConsentimientos: historialConsentimientos.map(({ fechaHora, finalidad, accion, versionTexto, canal }) => ({ fechaHora, finalidad, accion, versionTexto, canal })),
-      actividad: actividad.map(({ fechaAccion, accion, canal, dispositivo, resultado }) => ({ fechaAccion, accion, canal, dispositivo, resultado }))
+      actividad: actividad.map(({ fechaAccion, accion, canal, dispositivo, resultado }) => ({ fechaAccion, accion, canal, dispositivo, resultado })),
+      rectificaciones,
+      oposiciones: oposiciones.map(({ tratamiento, nombre, vigente, vigenteDesde, levantadaEn }) => ({ tratamiento, nombre, vigente, vigenteDesde, levantadaEn }))
     };
   }
 

@@ -7,11 +7,12 @@ import { ServicioAuditoria } from '../auditoria/servicio-auditoria';
 import { ServicioNoRepudio } from '../auditoria/servicio-no-repudio';
 import { ServicioAutenticacion } from '../autenticacion/servicio-autenticacion';
 import type { Sesion } from '../autorizacion/roles';
+import { esTratamientoOponible, ServicioOposiciones, TRATAMIENTOS_OPONIBLES, type TratamientoOponible } from '../terminos/servicio-oposiciones';
 import { DIAS_PLAZO_DERECHOS, VERSION_TERMINOS } from '../terminos/terminos';
-import { ServicioUsuarios, type CambiosRectificacion } from '../usuarios/servicio-usuarios';
+import { ServicioUsuarios, type CambiosRectificacion, type InformeSupresion } from '../usuarios/servicio-usuarios';
 import { ServicioNotificaciones } from './servicio-notificaciones';
 
-export const TIPOS_DERECHO = ['acceso', 'rectificacion', 'supresion'] as const;
+export const TIPOS_DERECHO = ['acceso', 'rectificacion', 'supresion', 'oposicion'] as const;
 export type TipoDerecho = (typeof TIPOS_DERECHO)[number];
 export type EstadoDerecho = 'recibida' | 'verificada' | 'en_evaluacion' | 'ejecutada' | 'rechazada' | 'cerrada';
 type NivelVerificacion = 'contrasena' | 'contrasena_y_codigo';
@@ -25,6 +26,14 @@ export interface DatosNuevaSolicitud {
   tipo?: string;
   cambios?: unknown;
   confirmacionNoRepudio?: unknown;
+  // Oposición (Actividad 6): tratamiento al que se opone el titular y, opcionalmente, su motivo.
+  tratamiento?: unknown;
+  motivo?: unknown;
+}
+
+interface DatosOposicion {
+  tratamiento: TratamientoOponible;
+  motivo?: string;
 }
 
 export interface DatosVerificacion {
@@ -91,7 +100,8 @@ export class ServicioDerechos {
     private readonly autenticacion: ServicioAutenticacion,
     private readonly noRepudio: ServicioNoRepudio,
     private readonly auditoria: ServicioAuditoria,
-    private readonly notificaciones: ServicioNotificaciones
+    private readonly notificaciones: ServicioNotificaciones,
+    private readonly oposiciones: ServicioOposiciones
   ) {}
 
   // ---------------------------------------------------------------- recepción
@@ -103,12 +113,16 @@ export class ServicioDerechos {
 
     // Las validaciones de negocio se aplican al recibir la solicitud y otra vez al evaluarla.
     let cambios: CambiosRectificacion | undefined;
+    let oposicion: DatosOposicion | undefined;
     if (tipo === 'rectificacion') cambios = await this.usuarios.validarRectificacion(sesion.id, datos.cambios);
     if (tipo === 'supresion') this.noRepudio.exigirConfirmacion(datos.confirmacionNoRepudio);
+    if (tipo === 'oposicion') oposicion = await this.validarOposicion(sesion.id, datos);
 
     // Verificación proporcional al riesgo: entregar todos los datos, cambiar el correo de acceso o suprimir la cuenta exige
-    // además un código de un solo uso; cambiar nombre, celular o renta solo la contraseña. No se piden datos adicionales.
-    const nivel: NivelVerificacion = tipo === 'rectificacion' && cambios?.correo === undefined ? 'contrasena' : 'contrasena_y_codigo';
+    // además un código de un solo uso; cambiar nombre, celular o renta, u oponerse a un tratamiento (solo restringe lo que
+    // hacemos con los datos), solo la contraseña. No se piden datos adicionales.
+    const nivel: NivelVerificacion = tipo === 'oposicion' || (tipo === 'rectificacion' && cambios?.correo === undefined) ? 'contrasena' : 'contrasena_y_codigo';
+    const datosGuardados = cambios ?? oposicion;
     const codigo = nivel === 'contrasena_y_codigo' ? String(randomInt(0, 1_000_000)).padStart(6, '0') : null;
 
     let id: number;
@@ -123,7 +137,7 @@ export class ServicioDerechos {
                                           "plazoRespuesta", "idEvidencia")
           VALUES ($1, $2, $3, $4, CASE WHEN $5 THEN now() + make_interval(mins => $6) END, $7, now() + make_interval(days => $8), $9)
           RETURNING "idSolicitudDerecho" AS id
-        `, [sesion.id, tipo, cambios ? this.persistenciaCifrada.protegerCampo(cambios) : null, nivel, codigo !== null,
+        `, [sesion.id, tipo, datosGuardados ? this.persistenciaCifrada.protegerCampo(datosGuardados) : null, nivel, codigo !== null,
           MINUTOS_VIGENCIA_CODIGO, contexto.canal, DIAS_PLAZO_DERECHOS, evidencia?.id ?? null]);
         const nuevoId = insertada.rows[0].id;
         if (codigo) {
@@ -191,6 +205,8 @@ export class ServicioDerechos {
     await this.transicion(id, 'en_evaluacion', contexto, 'sistema', { evaluadaEn: true });
     const solicitud = await this.cargar(sesion.id, id);
     let cerrarSesion = false;
+    let informeSupresion: InformeSupresion | undefined;
+    let detalleEvento: Record<string, unknown> | undefined;
     try {
       if (solicitud.tipoDerecho === 'acceso') {
         // La copia se genera al descargarla, así no queda almacenada una segunda copia de los datos.
@@ -201,7 +217,8 @@ export class ServicioDerechos {
       } else if (solicitud.tipoDerecho === 'rectificacion') {
         const cambios = this.persistenciaCifrada.revelarCampo<CambiosRectificacion>(solicitud.datosSolicitud) ?? {};
         const validados = await this.usuarios.validarRectificacion(sesion.id, cambios);
-        const aplicados = await this.usuarios.aplicarRectificacion(sesion.id, validados);
+        const aplicados = await this.usuarios.aplicarRectificacion(sesion.id, validados, id);
+        detalleEvento = { campos: aplicados };
         await this.transicion(id, 'ejecutada', contexto, 'sistema', {
           resultado: 'ejecutada',
           respuesta: `Se rectificaron: ${aplicados.join(', ')}. Los demás módulos usan el dato corregido de inmediato porque se identifican por seudónimo.`
@@ -209,17 +226,37 @@ export class ServicioDerechos {
             + (aplicados.includes('rentaMensual') ? ' Las próximas evaluaciones de riesgo usarán el nuevo tramo de renta.' : '')
         });
         await this.transicion(id, 'cerrada', contexto, 'sistema', { borrarDatos: true });
-      } else {
+      } else if (solicitud.tipoDerecho === 'supresion') {
         const pendientes = await this.usuarios.obligacionesPendientes(sesion.id);
         if (pendientes.length > 0) {
           await this.transicion(id, 'rechazada', contexto, 'sistema', { resultado: 'rechazada', respuesta: `${FUNDAMENTO_RECHAZO_SUPRESION}${pendientes.join('; ')}.` });
           await this.transicion(id, 'cerrada', contexto, 'sistema', {});
         } else {
-          await this.usuarios.anonimizarCuenta(sesion.id, contexto);
-          await this.transicion(id, 'ejecutada', contexto, 'sistema', { resultado: 'ejecutada', respuesta: RESPUESTA_SUPRESION });
+          informeSupresion = await this.usuarios.anonimizarCuenta(sesion.id, contexto);
+          const bloqueado = informeSupresion.bloqueadoPorObligacionLegal.map((b) => `${b.tabla} (${b.registros})`).join(', ') || 'ninguno';
+          await this.transicion(id, 'ejecutada', contexto, 'sistema', {
+            resultado: 'ejecutada', respuesta: `${RESPUESTA_SUPRESION} Registros bloqueados por obligación legal: ${bloqueado}.`
+          });
           await this.transicion(id, 'cerrada', contexto, 'sistema', {});
+          await this.registrarEvento(sesion, 'derechos.supresion.propagada', id, contexto, {
+            destinos: informeSupresion.propagacion.map((p) => `${p.destino}: ${p.estado}`)
+          });
           cerrarSesion = true;
         }
+      } else {
+        // Oposición: se vuelve a evaluar (podría haber otra vigente) y, si procede, el tratamiento queda bloqueado desde ya.
+        const pedida = this.persistenciaCifrada.revelarCampo<DatosOposicion>(solicitud.datosSolicitud);
+        if (!pedida || !esTratamientoOponible(pedida.tratamiento)) throw new BadRequestException('la solicitud no indica un tratamiento válido');
+        const tratamiento = TRATAMIENTOS_OPONIBLES[pedida.tratamiento];
+        await this.baseDatos.transaccion(async (tx) => {
+          await fijarContexto(tx, { ...contexto, actor: 'sistema' });
+          await this.oposiciones.registrar(tx, sesion.id, pedida.tratamiento, id);
+        });
+        detalleEvento = { tratamiento: pedida.tratamiento };
+        await this.transicion(id, 'ejecutada', contexto, 'sistema', {
+          resultado: 'ejecutada', respuesta: `Tu oposición a "${tratamiento.nombre}" está vigente. ${tratamiento.efecto}`
+        });
+        await this.transicion(id, 'cerrada', contexto, 'sistema', {});
       }
     } catch (error) {
       // Una regla de negocio que deja de cumplirse entre la recepción y la ejecución termina en una respuesta fundamentada.
@@ -229,8 +266,43 @@ export class ServicioDerechos {
       await this.transicion(id, 'cerrada', contexto, 'sistema', { borrarDatos: true });
     }
     const final = await this.obtener(sesion.id, id);
-    await this.registrarEvento(sesion, `derechos.${final.tipo}.${final.resultado ?? final.estado}`, id, contexto);
-    return { solicitud: final, sesionCerrada: cerrarSesion };
+    await this.registrarEvento(sesion, `derechos.${final.tipo}.${final.resultado ?? final.estado}`, id, contexto, detalleEvento);
+    return { solicitud: final, sesionCerrada: cerrarSesion, ...(informeSupresion ? { informeSupresion } : {}) };
+  }
+
+  // ---------------------------------------------------------------- oposición (Actividad 6, punto 6)
+
+  private async validarOposicion(usuarioId: number, datos: DatosNuevaSolicitud): Promise<DatosOposicion> {
+    if (!esTratamientoOponible(datos.tratamiento)) {
+      throw new BadRequestException(`tratamiento debe ser uno de: ${Object.keys(TRATAMIENTOS_OPONIBLES).join(', ')}`);
+    }
+    if (await this.oposiciones.estaOpuesto(usuarioId, datos.tratamiento)) throw new ConflictException('ya tienes una oposición vigente a este tratamiento');
+    if (datos.motivo !== undefined && typeof datos.motivo !== 'string') throw new BadRequestException('motivo debe ser texto');
+    const motivo = typeof datos.motivo === 'string' ? datos.motivo.trim().slice(0, 500) : '';
+    return { tratamiento: datos.tratamiento, ...(motivo ? { motivo } : {}) };
+  }
+
+  tratamientosOponibles() {
+    return Object.entries(TRATAMIENTOS_OPONIBLES).map(([id, t]) => ({ id, ...t }));
+  }
+
+  async listarOposiciones(sesion: Sesion) {
+    this.exigirTitular(sesion);
+    return this.oposiciones.listar(sesion.id);
+  }
+
+  // Levantar la oposición devuelve el tratamiento a su estado normal. Se exige la contraseña porque reactiva un perfilamiento.
+  async levantarOposicion(sesion: Sesion, tratamiento: string, datos: DatosVerificacion, contexto: ContextoCliente) {
+    this.exigirTitular(sesion);
+    if (!esTratamientoOponible(tratamiento)) throw new NotFoundException('tratamiento no encontrado');
+    const valida = typeof datos.contrasena === 'string' && await this.autenticacion.verificarContrasena(sesion, datos.contrasena);
+    if (!valida) {
+      await this.auditoria.intentarRegistrar({ actor: sesion, accion: 'derechos.oposicion.levantar', resultado: 'fallo', contexto, recurso: `tratamiento:${tratamiento}` });
+      throw new UnauthorizedException('no pudimos verificar tu identidad: revisa la contraseña');
+    }
+    await this.oposiciones.levantar(sesion.id, tratamiento, contexto);
+    await this.auditoria.intentarRegistrar({ actor: sesion, accion: 'derechos.oposicion.levantada', resultado: 'exito', contexto, recurso: `tratamiento:${tratamiento}` });
+    return this.oposiciones.listar(sesion.id);
   }
 
   // ---------------------------------------------------------------- entrega (acceso y portabilidad)
@@ -322,10 +394,12 @@ export class ServicioDerechos {
   }
 
   private vista(fila: FilaSolicitud, historial: FilaHistorial[]) {
-    const cambios = fila.datosSolicitud ? this.persistenciaCifrada.revelarCampo<CambiosRectificacion>(fila.datosSolicitud) : null;
+    const guardados = fila.datosSolicitud ? this.persistenciaCifrada.revelarCampo<Record<string, unknown>>(fila.datosSolicitud) : null;
+    const cambios = fila.tipoDerecho === 'rectificacion' ? guardados : null;
     return {
       id: String(fila.idSolicitudDerecho), tipo: fila.tipoDerecho, estado: fila.estado, resultado: fila.resultado, respuesta: fila.respuesta,
-      nivelVerificacion: fila.nivelVerificacion, camposSolicitados: cambios ? Object.keys(cambios) : undefined, canal: fila.canal,
+      nivelVerificacion: fila.nivelVerificacion, camposSolicitados: cambios ? Object.keys(cambios) : undefined,
+      tratamiento: fila.tipoDerecho === 'oposicion' && typeof guardados?.tratamiento === 'string' ? guardados.tratamiento : undefined, canal: fila.canal,
       recibidaEn: iso(fila.recibidaEn), verificadaEn: iso(fila.verificadaEn), evaluadaEn: iso(fila.evaluadaEn), resueltaEn: iso(fila.resueltaEn),
       cerradaEn: iso(fila.cerradaEn), plazoRespuesta: iso(fila.plazoRespuesta), descargaDisponibleHasta: iso(fila.descargaDisponibleHasta),
       codigoExpiraEn: fila.estado === 'recibida' ? iso(fila.codigoExpiraEn) : null, evidenciaId: fila.idEvidencia,

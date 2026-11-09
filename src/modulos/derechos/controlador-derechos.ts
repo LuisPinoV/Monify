@@ -53,6 +53,31 @@ export class ControladorDerechos {
     return this.servicio.descargar(sesion, id, contexto);
   }
 
+  // Oposición (Actividad 6): catálogo de tratamientos a los que el titular se puede oponer, sus oposiciones y el levantamiento.
+  @Get('tratamientos')
+  @Permiso('derechos.ejercer')
+  @SinConsentimiento()
+  tratamientos() {
+    return this.servicio.tratamientosOponibles();
+  }
+
+  @Get('oposiciones')
+  @Permiso('derechos.ejercer')
+  @SinConsentimiento()
+  oposiciones(@SesionActual() sesion: Sesion) {
+    return this.servicio.listarOposiciones(sesion);
+  }
+
+  @Post('oposiciones/:tratamiento/levantar')
+  @HttpCode(200)
+  @Permiso('derechos.ejercer')
+  @SinConsentimiento()
+  levantar(
+    @SesionActual() sesion: Sesion, @Param('tratamiento') tratamiento: string, @Body() datos: DatosVerificacion, @ContextoActual() contexto: ContextoCliente
+  ) {
+    return this.servicio.levantarOposicion(sesion, tratamiento, datos ?? {}, contexto);
+  }
+
   // Supervisión de plazos (Admin y Auditor): sin los datos pedidos ni la respuesta, solo estados y fechas.
   @Get('supervision')
   @Permiso('derechos.supervisar')

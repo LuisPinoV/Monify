@@ -101,6 +101,8 @@ export interface ConsultaRiesgo {
   id: Identificador;
   usuarioId: Identificador;
   score?: number;
+  // Actividad 6: el titular se opuso al score; el valor se conserva pero queda bloqueado.
+  scoreBloqueado?: boolean;
   morosidad: boolean;
   tiempoDeMorosidad?: string;
   tiempoDeMorosidadEtiqueta?: string;

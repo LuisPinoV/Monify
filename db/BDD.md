@@ -75,6 +75,15 @@ Para conservar los datos, usa `docker compose down` sin `-v`.
 | `SolicitudDerecho` | Solicitudes de acceso, rectificación y supresión con sus fechas y plazo. | Trigger: no se borra y solo admite las transiciones del flujo. |
 | `HistorialSolicitudDerecho` | Cada cambio de estado de una solicitud (trigger). | Solo anexado. |
 
+## Tablas de la Actividad 6
+
+| Tabla | Contenido | Protección |
+| --- | --- | --- |
+| `OposicionTratamiento` | Oposición del titular a un tratamiento (`score_comportamiento`), la solicitud que la originó y su levantamiento. | Índice único de oposición vigente; trigger: no se borra ni se reactiva. |
+| `RegistroRectificacion` | Cada campo rectificado, con la solicitud, la fecha y huellas HMAC del valor anterior y del nuevo. | Solo anexado; la supresión solo puede borrar las huellas. |
+
+`SolicitudDerecho.tipoDerecho` admite además `oposicion` (la migración reemplaza el CHECK si hace falta).
+
 ## Cambios del diagrama BDD v5
 
 | Cambio | Detalle |

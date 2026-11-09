@@ -115,6 +115,7 @@ las cuentas usan la contraseña `Monify2026!` (configurable con `SEED_CONTRASENA
 | `pnpm run compilar` / `iniciar` | Compila a `dist/` y ejecuta la versión compilada. |
 | `pnpm run prueba:humo` | Prueba de punta a punta contra la API en ejecución (ver abajo). |
 | `pnpm run prueba:seguridad` | Pruebas de los controles de la Actividad 4 (accesos no autorizados rechazados). |
+| `pnpm run prueba:actividad6` | Pruebas de la Actividad 6: una solicitud concreta por mecanismo de derechos, incluida una de un solicitante no verificado, y los controles en la base (lee `PUERTO` y `DATABASE_URL` de `.env`). |
 | `pnpm run prueba:actividad5` | Pruebas de consentimiento y derechos de la Actividad 5, incluidos intentos directos en la base y las comprobaciones del diseño BDD v5 (lee `PUERTO` y `DATABASE_URL` de `.env`). |
 
 `prueba:humo` necesita la API corriendo y las credenciales de un Admin, por
@@ -123,10 +124,10 @@ ejemplo con la semilla cargada:
 
 ### Pruebas y evidencias
 
-Los tres scripts de `scripts/` imprimen cada caso con su resultado (aprobada,
+Los scripts de `scripts/` imprimen cada caso con su resultado (aprobada,
 fallida u omitida) y un detalle verificable (códigos HTTP, ids de eventos,
-huellas), que es la evidencia usada en los informes. `prueba:seguridad` y
-`prueba:actividad5` necesitan la API corriendo con la semilla cargada y nunca
+huellas), que es la evidencia usada en los informes. `prueba:seguridad`,
+`prueba:actividad5` y `prueba:actividad6` necesitan la API corriendo con la semilla cargada y nunca
 deben ejecutarse contra producción. Los informes entregados están en la raíz
 (`[Seguridad y Proteccion de Datos] Fun Gang - Actividad 2.pdf` y
 `[Seguridad y Proteccion de Datos] Fun Gang (2).pdf`) y los diagramas de flujo
@@ -233,6 +234,7 @@ eliminación. Cada persona ve su propia actividad en `GET /usuarios/me/actividad
 | `GET /finalidades` | Público: catálogo de finalidades. |
 | `GET /consentimientos`, `GET /consentimientos/historial`, `POST /consentimientos/otorgar`, `POST /consentimientos/:finalidad/revocar`, `POST /consentimientos/rechazar` | Titular (disponibles aunque falte un consentimiento). |
 | `GET/POST /derechos/solicitudes`, `POST /derechos/solicitudes/:id/verificar`, `POST /derechos/solicitudes/:id/desistir`, `GET /derechos/solicitudes/:id/descarga` | Titular (disponibles aunque falte un consentimiento). |
+| `GET /derechos/tratamientos`, `GET /derechos/oposiciones`, `POST /derechos/oposiciones/:tratamiento/levantar` | Titular: catálogo de tratamientos oponibles, sus oposiciones y el levantamiento (Actividad 6). |
 | `GET /derechos/supervision` | Admin y Auditor: estados y plazos, sin los datos pedidos. |
 | `GET/POST /autorizaciones`, `DELETE /autorizaciones/:id`, `GET /autorizaciones/beneficiarios` | Titular y Auditor. `beneficiarios` lista a quién se puede otorgar acceso (Auditores y Operadores para un titular; Admins para un Auditor), solo con seudónimos. |
 | `GET /usuarios`, `PATCH /usuarios/:id/bloqueo` | Personal (seudónimos) / Admin. |
@@ -246,7 +248,7 @@ eliminación. Cada persona ve su propia actividad en `GET /usuarios/me/actividad
 muestra a cada rol solo las secciones que su matriz permite: billetera y
 transacciones con casilla de no repudio, créditos, verificación y riesgo,
 privacidad (consentimientos, historial y revocación, autorizaciones), Mis derechos
-(solicitudes de acceso, rectificación y supresión), administración (cuentas, roles, bloqueos y matriz RBAC) y auditoría
+(solicitudes de acceso, rectificación, supresión y oposición, y la tabla de tratamientos bloqueados), administración (cuentas, roles, bloqueos y matriz RBAC) y auditoría
 (bitácora, verificación de integridad y evidencias firmadas).
 
 ## Actividad 5: gestión del consentimiento y ejercicio de derechos
@@ -310,6 +312,58 @@ El esquema sigue el diagrama BDD v5:
 - `Transaccion` tiene clave primaria (`idTransaccion`, `idTarjeta`) y ya no guarda `idUsuario`: el titular se obtiene a través de `Billetera`.
 - Las tablas que el diagrama no dibuja (`Rol`, `UserLogs`, `EvidenciaNoRepudio`, `AutorizacionAcceso`, `ConsentLogs`, `SolicitudDerecho`, `HistorialSolicitudDerecho`) se mantienen porque sostienen el RBAC, la auditoría, el no repudio y el ejercicio de derechos.
 - Una base creada con la versión anterior se migra sola al arrancar (renombra columnas, cambia la clave de `Transaccion` y agrega las columnas nuevas), sin perder datos.
+
+## Actividad 6: mecanismos de derechos
+
+La Actividad 6 parte del módulo de derechos de la Actividad 5 (`src/modulos/derechos`). Lo que ya cumplía se
+mantuvo; se agregó la oposición, el registro de cada rectificación y el informe de la supresión.
+
+| Punto | Implementación | Estado |
+| --- | --- | --- |
+| 1. Canal y modelo de datos | Canal único: API autenticada `/derechos` (panel "Mis derechos"), solo el propio titular (RBAC `derechos.ejercer`). Modelo: `SolicitudDerecho` (tipo, estado, canal, fechas de cada etapa, plazo de 30 días, nivel de verificación, evidencia) + `HistorialSolicitudDerecho` (cada cambio de estado, por trigger) + `RegistroRectificacion` y `OposicionTratamiento`. | Actividad 5, ampliado |
+| 2. Verificación de identidad | Ninguna solicitud se evalúa sin pasar a `verificada`: contraseña, más código de un solo uso al correo para acceso, supresión y cambio de correo. 5 intentos fallidos rechazan y cierran la solicitud; una solicitud ajena responde 404. | Actividad 5 |
+| 3. Acceso y portabilidad | JSON `monify.portabilidad/1` con huella SHA-256: perfil, billetera, transacciones, deudas, créditos, riesgo (incluido el score bloqueado), KYC, consentimientos, actividad y ahora también `rectificaciones` y `oposiciones`. Solo datos del titular. | Ampliado |
+| 4. Rectificación con registro del cambio | Cada campo cambiado queda en `RegistroRectificacion` (campo, fecha, solicitud y huellas HMAC del valor anterior y del nuevo, nunca el dato en claro) y en la bitácora (`derechos.rectificacion.ejecutada` con los campos). | Nuevo registro |
+| 5. Supresión | La respuesta de la verificación incluye `informeSupresion`: qué se eliminó, qué quedó bloqueado (`isBlocked`) por obligación legal con su motivo y cantidad de registros, y a dónde se propagó (base, bóveda, sesiones, bitácora, respaldos y terceros). Se registra `derechos.supresion.propagada`. | Nuevo informe |
+| 6. Oposición / bloqueo | Tipo de solicitud `oposicion` sobre el tratamiento `score_comportamiento`. | Nuevo |
+| 7. Pruebas | `pnpm run prueba:actividad6`. | Nuevo |
+
+### Oposición al score de comportamiento financiero
+
+Se eligió el cálculo y uso del **score de comportamiento financiero** porque es un perfilamiento que el titular
+puede rechazar (derecho de oposición y a no ser objeto de decisiones automatizadas, Ley 19.628 modificada por
+la Ley 21.719) y porque no es necesario para la billetera ni lo exige una ley, a diferencia del KYC, las
+transacciones o la morosidad. Revocar el consentimiento `evaluacion_crediticia` bloquea todo el sistema; la
+oposición es granular.
+
+- **Solicitud.** `POST /derechos/solicitudes` con `{ "tipo": "oposicion", "tratamiento": "score_comportamiento", "motivo": "…" }`.
+  Sigue el mismo flujo y se verifica con la contraseña (restringe el tratamiento, no entrega ni borra datos).
+- **Efecto.** Al ejecutarse se crea una fila vigente en `OposicionTratamiento`. Desde ese momento
+  `POST /consultas-riesgo` con `score` para ese titular responde `409`; la consulta sin score sí se registra
+  (morosidad y tramos siguen siendo necesarios para el contrato). Los scores ya registrados quedan bloqueados:
+  `GET /consultas-riesgo` e `/informacion-financiera` los devuelven sin valor y con `scoreBloqueado: true`, y la
+  información financiera avisa la oposición para que el crédito se evalúe sin score. La copia de acceso del
+  titular sí los incluye.
+- **Levantamiento.** `POST /derechos/oposiciones/score_comportamiento/levantar` con la contraseña. La fila no se
+  borra: guarda `levantadaEn` y el canal, y queda `derechos.oposicion.levantada` en la bitácora.
+- **Base de datos.** Un índice único impide dos oposiciones vigentes al mismo tratamiento y un trigger impide
+  borrarlas o reactivarlas.
+
+### Supresión: qué se elimina, qué se bloquea y cómo se propaga
+
+| Se elimina | Se bloquea por obligación legal (`isBlocked`) | Propagación |
+| --- | --- | --- |
+| Datos originales de la bóveda; seudónimos (pasan a `ANON-…`); índices HMAC de RUT y correo; tramo de renta; credencial; número de tarjetas; comprobante KYC; cambios pedidos y huellas de rectificaciones; consentimientos y autorizaciones vigentes (revocados). | Transacciones, tarjetas y billetera (trazabilidad financiera), deudas, créditos y consultas de riesgo (respaldo contractual), verificación KYC (debida diligencia), consentimientos (prueba de licitud) y la fila del usuario, ya anónima. | Base principal en una transacción; bóveda separada; sesiones (el guard rechaza el JWT); bitácora y evidencias (solo seudónimos irreversibles); respaldos (rotación); verificador y buró (aviso simulado registrado en la bitácora). |
+
+### Cambios de esquema (aditivos)
+
+`db/init/01-monify_schema.sql` agrega, sin renombrar ni borrar nada:
+
+- `'oposicion'` en el CHECK de `SolicitudDerecho.tipoDerecho`. Una base existente se migra sola al iniciar.
+- `OposicionTratamiento` (`idUsuario`, `tratamiento`, `idSolicitudDerecho`, `vigenteDesde`, `levantadaEn`,
+  `canalLevantamiento`), con un índice único para la oposición vigente y el trigger `fn_oposicion_flujo`.
+- `RegistroRectificacion` (`idSolicitudDerecho`, `idUsuario`, `campo`, `huellaAnterior`, `huellaNueva`, `fecha`),
+  de solo anexado (trigger `fn_rectificacion_inmutable`). Solo la supresión puede borrar sus huellas.
 
 ## Protección de datos
 

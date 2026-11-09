@@ -16,7 +16,8 @@
     "db:logs": "docker compose logs -f db",
     "prueba:humo": "node scripts/prueba-humo.js",
     "prueba:seguridad": "node scripts/pruebas-seguridad.js",
-    "prueba:actividad5": "node --env-file=.env scripts/pruebas-actividad5.js"
+    "prueba:actividad5": "node --env-file=.env scripts/pruebas-actividad5.js",
+    "prueba:actividad6": "node --env-file=.env scripts/pruebas-actividad6.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.11",

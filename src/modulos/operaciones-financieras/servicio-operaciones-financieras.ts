@@ -11,6 +11,7 @@ import type { Sesion } from '../autorizacion/roles';
 import type { Alcance } from '../autorizacion/servicio-autorizacion';
 import { ServicioBilleteras } from '../billeteras/servicio-billeteras';
 import { ServicioConsentimientos } from '../terminos/servicio-consentimientos';
+import { ServicioOposiciones, TRATAMIENTOS_OPONIBLES, type TratamientoOponible } from '../terminos/servicio-oposiciones';
 
 const ESTADOS_VERIFICACION: EstadoVerificacion[] = ['pendiente', 'en_revision', 'verificada', 'rechazada'];
 const ESTADOS_RESOLUCION: EstadoSolicitudCredito[] = ['en_evaluacion', 'aprobada', 'rechazada'];
@@ -23,6 +24,8 @@ export interface InformacionFinanciera {
   tramoRentaEtiqueta?: string;
   saldoTotal: number;
   ultimaConsultaRiesgo?: ConsultaRiesgo;
+  // Actividad 6: tratamientos a los que el titular se opuso (por ejemplo, el score): la evaluación debe prescindir de ellos.
+  oposiciones: { tratamiento: TratamientoOponible; nombre: string }[];
   creditosVigentes: number;
   solicitudesEnCurso: number;
 }
@@ -48,7 +51,8 @@ export class ServicioOperacionesFinancieras {
     private readonly hash: ServicioHash,
     private readonly billeteras: ServicioBilleteras,
     private readonly consentimientos: ServicioConsentimientos,
-    private readonly noRepudio: ServicioNoRepudio
+    private readonly noRepudio: ServicioNoRepudio,
+    private readonly oposiciones: ServicioOposiciones
   ) {}
 
   // ---------------------------------------------------------------- transacciones
@@ -139,14 +143,21 @@ export class ServicioOperacionesFinancieras {
 
   // ---------------------------------------------------------------- riesgo
 
-  async listarConsultasRiesgo(alcance: Alcance, usuarioId?: number): Promise<ConsultaRiesgo[]> {
+  // Con una oposición vigente al score, el score queda bloqueado: no se muestra ni se usa. Solo la copia de acceso del
+  // propio titular (incluirBloqueados) lo incluye, porque el derecho de acceso alcanza también a los datos bloqueados.
+  async listarConsultasRiesgo(alcance: Alcance, usuarioId?: number, opciones: { incluirBloqueados?: boolean } = {}): Promise<ConsultaRiesgo[]> {
     const filtro = condicionAlcance(acotarAlcance(alcance, usuarioId), '"idUsuario"', 1);
     const resultado = await this.baseDatos.consultar<RiesgoRow>(`
       SELECT "idConsulta" AS id, "idUsuario" AS "usuarioId", "scoreDeRiesgo" AS score, "morosidad", "tiempoDeMorosidad",
              "tiempoEnDeuda", "fechaConsulta" AS "consultadaEn"
       FROM "ConsultaDeRiesgo" WHERE ${filtro.sql} AND NOT "isBlocked" ORDER BY "fechaConsulta" DESC, "idConsulta" DESC
     `, filtro.parametros);
-    return resultado.rows.map((fila) => this.mapearRiesgo(fila));
+    const consultas = resultado.rows.map((fila) => this.mapearRiesgo(fila));
+    if (opciones.incluirBloqueados || consultas.length === 0) return consultas;
+    const opuestos = await this.oposiciones.titularesOpuestos('score_comportamiento', [...new Set(consultas.map((c) => Number(c.usuarioId)))]);
+    return consultas.map((consulta) => opuestos.has(Number(consulta.usuarioId))
+      ? { ...consulta, score: undefined, scoreBloqueado: true }
+      : consulta);
   }
 
   // El monto de deuda no se almacena y los tiempos se reducen a tramos antes de persistirse.
@@ -155,6 +166,9 @@ export class ServicioOperacionesFinancieras {
   }): Promise<ConsultaRiesgo> {
     if (datos.score !== undefined && (typeof datos.score !== 'number' || !Number.isFinite(datos.score) || datos.score < 0)) {
       throw new BadRequestException('score debe ser un número no negativo');
+    }
+    if (datos.score !== undefined && await this.oposiciones.estaOpuesto(datos.usuarioId, 'score_comportamiento')) {
+      throw new ConflictException('el titular se opuso al tratamiento "score de comportamiento financiero": registra la consulta sin score');
     }
     const protegerTramo = (dias: number | undefined) => {
       if (dias === undefined) return null;
@@ -184,12 +198,14 @@ export class ServicioOperacionesFinancieras {
     const tramo = this.persistenciaCifrada.revelarCampo<string>(usuario.rows[0].tramoRenta) ?? undefined;
     const ultima = await this.listarConsultasRiesgo({ tipo: 'ids', ids: [usuarioId] });
     const obligaciones = await this.obligacionesPendientes(usuarioId, this.baseDatos);
+    const oposiciones = await this.oposiciones.vigentes(usuarioId);
     return {
       usuarioId: String(usuarioId),
       tramoRenta: tramo,
       tramoRentaEtiqueta: etiquetaTramoRenta(tramo),
       saldoTotal: await this.billeteras.saldoTotal(usuarioId),
       ultimaConsultaRiesgo: ultima[0],
+      oposiciones: oposiciones.map((tratamiento) => ({ tratamiento, nombre: TRATAMIENTOS_OPONIBLES[tratamiento].nombre })),
       creditosVigentes: obligaciones.creditosVigentes,
       solicitudesEnCurso: obligaciones.solicitudesEnCurso
     };

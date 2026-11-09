@@ -32,14 +32,14 @@ const ACCIONES = {
   'solicitud_credito.ver': 'Ver solicitudes de crédito', 'credito.gestionar': 'Gestionar catálogo de créditos', 'riesgo.registrar': 'Registrar riesgo y deudas',
   'kyc.ver': 'Ver verificación de identidad', 'kyc.registrar': 'Registrar verificación de identidad',
   'consentimiento.gestionar': 'Gestionar consentimientos', 'autorizacion.gestionar': 'Otorgar autorizaciones de acceso',
-  'derechos.ejercer': 'Ejercer derechos (acceso, rectificación, supresión)', 'derechos.supervisar': 'Supervisar solicitudes de derechos'
+  'derechos.ejercer': 'Ejercer derechos (acceso, rectificación, supresión, oposición)', 'derechos.supervisar': 'Supervisar solicitudes de derechos'
 };
 const AMBITOS = { financiera: 'Información financiera', movimientos: 'Historial de movimientos', deuda: 'Deudas', logs: 'Logs del sistema' };
 const FINALIDADES = {
   terminos_y_condiciones: 'Términos y Condiciones', tratamiento_datos_personales: 'Tratamiento de datos personales', evaluacion_crediticia: 'Evaluación crediticia'
 };
 const ESTADO_CONSENTIMIENTO = { otorgado: 'Otorgado', revocado: 'Revocado', reemplazado: 'Reemplazado (versión anterior)', pendiente: 'Pendiente', rechazado: 'Rechazado' };
-const TIPO_DERECHO = { acceso: 'Acceso y portabilidad', rectificacion: 'Rectificación', supresion: 'Supresión' };
+const TIPO_DERECHO = { acceso: 'Acceso y portabilidad', rectificacion: 'Rectificación', supresion: 'Supresión', oposicion: 'Oposición a un tratamiento' };
 const ESTADO_DERECHO = {
   recibida: 'Recibida', verificada: 'Identidad verificada', en_evaluacion: 'En evaluación', ejecutada: 'Ejecutada', rechazada: 'Rechazada', cerrada: 'Cerrada'
 };
@@ -344,7 +344,7 @@ async function vistaRiesgo() {
         ${campo('Días de morosidad (se guarda el tramo)', '<input type="number" name="diasMorosidad" min="0" step="1">')}
         ${campo('Días en deuda (se guarda el tramo)', '<input type="number" name="diasEnDeuda" min="0" step="1">')}`, 'Registrar consulta'), { clase: 'form-panel' }) : ''}
       ${errorConsultas ? panel('RIESGO', 'Consultas de riesgo', `<div class="empty-state">${/X-Motivo-Acceso/.test(errorConsultas) ? 'Escribe un motivo de acceso (arriba a la derecha) y presiona Actualizar para ver las consultas de otros titulares.' : escapeHtml(errorConsultas)}</div>`) : ''}
-      ${consultas && !errorConsultas ? panel('RIESGO', 'Consultas de riesgo', tabla(['ID', ...(ajeno ? ['Titular'] : []), 'Score', 'Morosidad', 'Tramo de mora', 'Tramo en deuda', 'Fecha'], consultas.map((c) => `<tr><td>#${c.id}</td>${ajeno ? `<td>${cuentaNombre(c.usuarioId)}</td>` : ''}<td>${c.score ?? '—'}</td><td><span class="badge ${c.morosidad ? 'badge-rechazada' : 'badge-verificada'}">${c.morosidad ? 'Sí' : 'No'}</span></td><td>${escapeHtml(c.tiempoDeMorosidadEtiqueta ?? '—')}</td><td>${escapeHtml(c.tiempoEnDeudaEtiqueta ?? '—')}</td><td>${formatDate(c.consultadaEn)}</td></tr>`), ajeno ? 'Sin consultas a las que tengas acceso.' : undefined), { contador: consultas.length }) : ''}
+      ${consultas && !errorConsultas ? panel('RIESGO', 'Consultas de riesgo', tabla(['ID', ...(ajeno ? ['Titular'] : []), 'Score', 'Morosidad', 'Tramo de mora', 'Tramo en deuda', 'Fecha'], consultas.map((c) => `<tr><td>#${c.id}</td>${ajeno ? `<td>${cuentaNombre(c.usuarioId)}</td>` : ''}<td>${c.scoreBloqueado ? badge('rechazada', 'Bloqueado (oposición)') : c.score ?? '—'}</td><td><span class="badge ${c.morosidad ? 'badge-rechazada' : 'badge-verificada'}">${c.morosidad ? 'Sí' : 'No'}</span></td><td>${escapeHtml(c.tiempoDeMorosidadEtiqueta ?? '—')}</td><td>${escapeHtml(c.tiempoEnDeudaEtiqueta ?? '—')}</td><td>${formatDate(c.consultadaEn)}</td></tr>`), ajeno ? 'Sin consultas a las que tengas acceso.' : undefined), { contador: consultas.length }) : ''}
     </section>
     ${puede('info_financiera.ver') && ajeno ? `<section class="content-grid content-grid-form">
       ${panel('FICHA', 'Información financiera de un titular', `${formulario('info-form', campo('Titular', selectorTitulares()), 'Consultar')}<div id="info-resultado"></div>`, { clase: 'form-panel' })}</section>` : ''}`;
@@ -369,7 +369,7 @@ async function vistaRiesgo() {
     const info = await getData(`/informacion-financiera?usuarioId=${encodeURIComponent(data.get('usuarioId'))}`);
     $('#info-resultado').innerHTML = tabla(['Dato', 'Valor'], [
       ['Tramo de renta', info.tramoRentaEtiqueta ?? '—'], ['Saldo total', formatCurrency(info.saldoTotal)],
-      ['Último score', info.ultimaConsultaRiesgo?.score ?? '—'], ['Créditos vigentes', info.creditosVigentes], ['Solicitudes en curso', info.solicitudesEnCurso]
+      ['Último score', info.oposiciones?.length ? 'Bloqueado: el titular se opuso al score' : info.ultimaConsultaRiesgo?.score ?? '—'], ['Créditos vigentes', info.creditosVigentes], ['Solicitudes en curso', info.solicitudesEnCurso]
     ].map(([k, v]) => `<tr><td>${k}</td><td>${escapeHtml(v)}</td></tr>`));
     return 'Acceso registrado en la bitácora';
   }, { reset: false });
@@ -428,17 +428,18 @@ async function vistaPrivacidad() {
   });
 }
 
-// ---------------------------------------------------------------- ejercicio de derechos (Actividad 5, parte 2)
+// ---------------------------------------------------------------- ejercicio de derechos (Actividad 5, parte 2; oposición: Actividad 6)
 const flujoSolicitud = (historial) => `<div class="flujo">${historial.map((h) => `<span class="paso" title="${escapeHtml(h.actor)} · ${escapeHtml(h.canal)}">${ESTADO_DERECHO[h.estadoNuevo] ?? h.estadoNuevo}<small>${formatDate(h.fecha, true).split(', ').pop()}</small></span>`).join('→')}</div>`;
 const estadoSolicitud = (s) => s.estado === 'cerrada' && s.resultado ? `${badge('cerrada', 'Cerrada')} ${badge(s.resultado === 'ejecutada' ? 'ejecutada' : s.resultado === 'desistida' ? 'desistida' : 'rechazada', s.resultado)}` : badge(s.estado, ESTADO_DERECHO[s.estado]);
 
 async function vistaDerechos(seleccion) {
   const pagina = $('#page-derechos');
-  const solicitudes = await getData('/derechos/solicitudes');
+  const [solicitudes, tratamientos, oposiciones] = await Promise.all([getData('/derechos/solicitudes'), getData('/derechos/tratamientos'), getData('/derechos/oposiciones')]);
+  const vigentes = oposiciones.filter((o) => o.vigente);
   const porVerificar = solicitudes.filter((s) => s.estado === 'recibida');
   const elegida = porVerificar.find((s) => s.id === seleccion) ?? porVerificar[0];
   const codigo = elegida ? S.codigos[elegida.id] : undefined;
-  pagina.innerHTML = `${heading('TUS DERECHOS', 'Mis derechos', 'Acceso y portabilidad, rectificación y supresión de tus datos. Cada solicitud pasa por recepción, verificación de identidad, evaluación, ejecución o respuesta fundamentada y cierre. Respondemos dentro de 30 días corridos.')}
+  pagina.innerHTML = `${heading('TUS DERECHOS', 'Mis derechos', 'Acceso y portabilidad, rectificación, supresión de tus datos y oposición a un tratamiento. Cada solicitud pasa por recepción, verificación de identidad, evaluación, ejecución o respuesta fundamentada y cierre. Respondemos dentro de 30 días corridos.')}
     ${restringido() ? `<div class="alert alert-warning aviso-consentimiento"><span>Te falta otorgar ${S.consentimiento.pendientes.length} consentimiento(s). Mientras tanto solo puedes usar este módulo.</span><button class="btn btn-primary" type="button" id="abrir-consentimiento">Otorgar consentimiento</button></div>` : ''}
     <section class="content-grid content-grid-form">
       ${panel('1 · RECEPCIÓN', 'Nueva solicitud', formulario('derecho-form', `
@@ -454,6 +455,11 @@ async function vistaDerechos(seleccion) {
           <p class="confirmacion-nota mb-0">Se ejecuta solo si tu saldo es $0 y no tienes deudas, créditos ni solicitudes en curso; si no, recibirás una respuesta fundamentada. Es irreversible.</p>
           ${casillaNoRepudio('cuenta.eliminar').replace(' required', '')}
         </div>
+        <div class="campos-rectificacion d-none" data-tipo="oposicion">
+          ${campo('Tratamiento', `<select name="tratamiento">${tratamientos.map((t) => `<option value="${t.id}">${escapeHtml(t.nombre)}</option>`).join('')}</select>`)}
+          ${tratamientos.map((t) => `<p class="confirmacion-nota mb-0">${escapeHtml(t.descripcion)} ${escapeHtml(t.efecto)}</p>`).join('')}
+          ${campo('Motivo (opcional)', '<input type="text" name="motivo" maxlength="500">')}
+        </div>
         <small class="confirmacion-nota" data-tipo-nota>Acceso: se pide tu contraseña y un código enviado a tu correo.</small>`, 'Enviar solicitud'), { clase: 'form-panel' })}
       ${panel('2 · VERIFICACIÓN', 'Verificar mi identidad', elegida ? formulario('verificar-form', `
         ${campo('Solicitud', `<select name="id">${porVerificar.map((s) => `<option value="${s.id}" ${s.id === elegida.id ? 'selected' : ''}>#${s.id} · ${TIPO_DERECHO[s.tipo]}</option>`).join('')}</select>`)}
@@ -468,9 +474,18 @@ async function vistaDerechos(seleccion) {
         <td>${estadoSolicitud(s)}</td><td class="activity-date">${formatDate(s.recibidaEn, true)}</td><td class="activity-date">${formatDate(s.plazoRespuesta)}</td>
         <td>${flujoSolicitud(s.historial)}${s.respuesta ? `<div class="respuesta-derecho">${escapeHtml(s.respuesta)}</div>` : ''}</td>
         <td><div class="acciones-fila">${s.tipo === 'acceso' && s.estado === 'ejecutada' ? `<button class="btn-mini" data-descargar="${s.id}">Descargar copia</button>` : ''}${['recibida', 'verificada'].includes(s.estado) ? `<button class="btn-mini" data-desistir="${s.id}">Desistir</button>` : ''}</div></td></tr>`), 'Aún no has presentado solicitudes.'), { contador: solicitudes.length })}
+    </section>
+    <section class="content-grid content-grid-form">
+      ${panel('OPOSICIÓN', 'Tratamientos bloqueados', tabla(['Tratamiento', 'Estado', 'Desde', 'Levantada'], oposiciones.map((o) => `<tr>
+        <td>${escapeHtml(o.nombre)}</td><td>${o.vigente ? badge('rechazada', 'Bloqueado') : badge('cerrada', 'Levantada')}</td>
+        <td class="activity-date">${formatDate(o.vigenteDesde, true)}</td><td class="activity-date">${o.levantadaEn ? formatDate(o.levantadaEn, true) : '—'}</td></tr>`), 'No te has opuesto a ningún tratamiento.'), { contador: vigentes.length })}
+      ${vigentes.length ? panel('OPOSICIÓN', 'Levantar una oposición', formulario('levantar-form', `
+        ${campo('Tratamiento', `<select name="tratamiento">${vigentes.map((o) => `<option value="${o.tratamiento}">${escapeHtml(o.nombre)}</option>`).join('')}</select>`)}
+        ${campo('Contraseña', '<input type="password" name="contrasena" required autocomplete="current-password">')}
+        <small class="confirmacion-nota">El tratamiento vuelve a aplicarse desde ese momento. Queda registrado en tu bitácora.</small>`, 'Levantar oposición'), { clase: 'form-panel' }) : ''}
     </section>`;
   const tipo = $('#derecho-form [name="tipo"]');
-  const notas = { acceso: 'Acceso: se pide tu contraseña y un código enviado a tu correo.', rectificacion: 'Rectificación: basta tu contraseña (si cambias el correo, también un código enviado al correo nuevo).', supresion: 'Supresión: contraseña, código enviado a tu correo y casilla de confirmación.' };
+  const notas = { acceso: 'Acceso: se pide tu contraseña y un código enviado a tu correo.', rectificacion: 'Rectificación: basta tu contraseña (si cambias el correo, también un código enviado al correo nuevo).', supresion: 'Supresión: contraseña, código enviado a tu correo y casilla de confirmación.', oposicion: 'Oposición: basta tu contraseña; el tratamiento queda bloqueado al verificarla.' };
   tipo.addEventListener('change', () => {
     pagina.querySelectorAll('[data-tipo]').forEach((bloque) => bloque.classList.toggle('d-none', bloque.dataset.tipo !== tipo.value));
     $('[data-tipo-nota]', pagina).textContent = notas[tipo.value];
@@ -485,6 +500,10 @@ async function vistaDerechos(seleccion) {
       if (data.get('rentaMensual')) cuerpo.cambios.rentaMensual = Number(data.get('rentaMensual'));
     }
     if (cuerpo.tipo === 'supresion') cuerpo.confirmacionNoRepudio = marcado(data, 'confirmacionNoRepudio');
+    if (cuerpo.tipo === 'oposicion') {
+      cuerpo.tratamiento = data.get('tratamiento');
+      if (data.get('motivo')) cuerpo.motivo = data.get('motivo');
+    }
     const r = await postData('/derechos/solicitudes', cuerpo);
     if (r.verificacion.codigoEnviadoA) S.codigos[r.solicitud.id] = { destino: r.verificacion.codigoEnviadoA, valor: r.verificacion.codigoDesarrollo };
     await vistaDerechos(r.solicitud.id);
@@ -497,6 +516,11 @@ async function vistaDerechos(seleccion) {
     if (r.sesionCerrada) { cerrarSesion(); return 'Tu cuenta fue eliminada y tus datos anonimizados.'; }
     await vistaDerechos();
     return `Solicitud #${id}: ${r.solicitud.resultado ?? ESTADO_DERECHO[r.solicitud.estado]}`;
+  });
+  bindForm('levantar-form', async (data) => {
+    await postData(`/derechos/oposiciones/${encodeURIComponent(data.get('tratamiento'))}/levantar`, { contrasena: data.get('contrasena') });
+    await vistaDerechos();
+    return 'Oposición levantada';
   });
   pagina.querySelectorAll('[data-desistir]').forEach((boton) => boton.addEventListener('click', async () => {
     try { await postData(`/derechos/solicitudes/${boton.dataset.desistir}/desistir`); showToast('Desististe de la solicitud'); await vistaDerechos(); } catch (error) { showToast(error.message, 'error'); }

@@ -319,7 +319,7 @@ CREATE TABLE IF NOT EXISTS "SolicitudDerecho" (
     "idUsuario"            INTEGER NOT NULL
         REFERENCES "Usuario"("idUsuario") ON DELETE RESTRICT,
     "tipoDerecho"          VARCHAR(20) NOT NULL
-        CHECK ("tipoDerecho" IN ('acceso', 'rectificacion', 'supresion')),
+        CHECK ("tipoDerecho" IN ('acceso', 'rectificacion', 'supresion', 'oposicion')),
     "estado"               VARCHAR(20) NOT NULL DEFAULT 'recibida'
         CHECK ("estado" IN ('recibida', 'verificada', 'en_evaluacion', 'ejecutada', 'rechazada', 'cerrada')),
     "resultado"            VARCHAR(20)
@@ -424,6 +424,97 @@ DROP TRIGGER IF EXISTS "tg_solicitud_derecho_historial" ON "SolicitudDerecho";
 CREATE TRIGGER "tg_solicitud_derecho_historial"
     AFTER INSERT OR UPDATE ON "SolicitudDerecho"
     FOR EACH ROW EXECUTE FUNCTION fn_solicitud_derecho_historial();
+
+-- ---------------------------------------------------------------------------
+-- Actividad 6: oposición/bloqueo de un tratamiento y registro de rectificaciones.
+-- Cambios aditivos: se agrega el tipo 'oposicion' y dos tablas nuevas; no se renombra ni borra nada.
+-- ---------------------------------------------------------------------------
+
+-- Migración: una base de la Actividad 5 tiene el CHECK sin 'oposicion'. Se reemplaza solo si hace falta.
+DO $$
+DECLARE
+    nombre TEXT;
+    definicion TEXT;
+BEGIN
+    SELECT conname, pg_get_constraintdef(oid) INTO nombre, definicion FROM pg_constraint
+    WHERE conrelid = '"SolicitudDerecho"'::regclass AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%tipoDerecho%';
+    IF nombre IS NOT NULL AND definicion NOT LIKE '%oposicion%' THEN
+        EXECUTE format('ALTER TABLE "SolicitudDerecho" DROP CONSTRAINT %I', nombre);
+        ALTER TABLE "SolicitudDerecho" ADD CONSTRAINT "SolicitudDerecho_tipoDerecho_check"
+            CHECK ("tipoDerecho" IN ('acceso', 'rectificacion', 'supresion', 'oposicion'));
+    END IF;
+END $$;
+
+-- Oposición del titular a un tratamiento concreto. Mientras está activa (levantadaEn NULL) el tratamiento queda
+-- bloqueado para ese titular; levantarla no borra el registro (queda la historia de la decisión).
+CREATE TABLE IF NOT EXISTS "OposicionTratamiento" (
+    "idOposicion"         INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    "idUsuario"           INTEGER NOT NULL
+        REFERENCES "Usuario"("idUsuario") ON DELETE RESTRICT,
+    "tratamiento"         VARCHAR(40) NOT NULL
+        CHECK ("tratamiento" IN ('score_comportamiento')),
+    "idSolicitudDerecho"  INTEGER NOT NULL
+        REFERENCES "SolicitudDerecho"("idSolicitudDerecho") ON DELETE RESTRICT,
+    "vigenteDesde"        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    "levantadaEn"         TIMESTAMPTZ,
+    "canalLevantamiento"  VARCHAR(20),
+    CHECK (("levantadaEn" IS NULL) = ("canalLevantamiento" IS NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "idx_oposicion_activa" ON "OposicionTratamiento"("idUsuario", "tratamiento")
+    WHERE "levantadaEn" IS NULL;
+
+-- Una oposición no se borra ni se reescribe: solo se puede levantar una vez.
+CREATE OR REPLACE FUNCTION fn_oposicion_flujo() RETURNS trigger AS $$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'Las oposiciones no se eliminan: se levantan (OposicionTratamiento %)', OLD."idOposicion";
+    END IF;
+    IF OLD."levantadaEn" IS NOT NULL
+       OR (NEW."idUsuario", NEW."tratamiento", NEW."idSolicitudDerecho", NEW."vigenteDesde")
+          IS DISTINCT FROM (OLD."idUsuario", OLD."tratamiento", OLD."idSolicitudDerecho", OLD."vigenteDesde") THEN
+        RAISE EXCEPTION 'Una oposición solo admite registrar su levantamiento';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "tg_oposicion_flujo" ON "OposicionTratamiento";
+CREATE TRIGGER "tg_oposicion_flujo"
+    BEFORE UPDATE OR DELETE ON "OposicionTratamiento"
+    FOR EACH ROW EXECUTE FUNCTION fn_oposicion_flujo();
+
+-- Registro de cada campo rectificado: qué cambió, cuándo y por qué solicitud. Los valores no se guardan en claro:
+-- solo huellas HMAC del valor anterior y del nuevo, que permiten comprobar el cambio sin revelar el dato.
+CREATE TABLE IF NOT EXISTS "RegistroRectificacion" (
+    "idRegistro"          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    "idSolicitudDerecho"  INTEGER NOT NULL
+        REFERENCES "SolicitudDerecho"("idSolicitudDerecho") ON DELETE RESTRICT,
+    "idUsuario"           INTEGER NOT NULL
+        REFERENCES "Usuario"("idUsuario") ON DELETE RESTRICT,
+    "campo"               VARCHAR(20) NOT NULL
+        CHECK ("campo" IN ('nombre', 'numeroCelular', 'correo', 'rentaMensual')),
+    "huellaAnterior"      VARCHAR(64),
+    "huellaNueva"         VARCHAR(64),
+    "fecha"               TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+);
+CREATE INDEX IF NOT EXISTS "idx_rectificacion_usuario" ON "RegistroRectificacion"("idUsuario");
+
+-- Solo anexado. Única excepción: la supresión borra las huellas (quedan campo, fecha y solicitud).
+CREATE OR REPLACE FUNCTION fn_rectificacion_inmutable() RETURNS trigger AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' AND NEW."huellaAnterior" IS NULL AND NEW."huellaNueva" IS NULL
+       AND (NEW."idSolicitudDerecho", NEW."idUsuario", NEW."campo", NEW."fecha")
+           IS NOT DISTINCT FROM (OLD."idSolicitudDerecho", OLD."idUsuario", OLD."campo", OLD."fecha") THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'La tabla RegistroRectificacion es de solo anexado: solo la supresión puede borrar sus huellas';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "tg_rectificacion_inmutable" ON "RegistroRectificacion";
+CREATE TRIGGER "tg_rectificacion_inmutable"
+    BEFORE UPDATE OR DELETE ON "RegistroRectificacion"
+    FOR EACH ROW EXECUTE FUNCTION fn_rectificacion_inmutable();
 
 -- Autorización expresa: el titular (o un auditor, para logs) permite a otro usuario interno ver cierto ámbito.
 CREATE TABLE IF NOT EXISTS "AutorizacionAcceso" (

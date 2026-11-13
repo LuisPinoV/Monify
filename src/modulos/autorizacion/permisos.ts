@@ -53,7 +53,7 @@ export const MATRIZ_PERMISOS: Record<Accion, Fila> = {
   'perfil.actualizar':         fila('permitido', 'propio', 'denegado', 'denegado', 'denegado'),
   'billetera.ver':             fila('denegado', 'propio', 'denegado', 'denegado', 'denegado'),
   'historial.ver':             fila('denegado', 'propio', 'permitido', 'autorizacion', 'necesidad'),
-  // La celda del auditor está vacía en el documento: se asume el mismo criterio que para el historial.
+  // El Auditor puede revisar movimientos y deudas según su autorización.
   'deuda.ver':                 fila('denegado', 'propio', 'permitido', 'autorizacion', 'necesidad'),
   'transaccion.crear':         fila('denegado', 'propio', 'denegado', 'denegado', 'denegado'),
   'solicitud_credito.crear':   fila('denegado', 'propio', 'denegado', 'denegado', 'denegado'),
@@ -61,7 +61,7 @@ export const MATRIZ_PERMISOS: Record<Accion, Fila> = {
   'roles.gestionar':           fila('permitido', 'denegado', 'denegado', 'denegado', 'denegado'),
   'claves.acceder':            fila('denegado', 'denegado', 'denegado', 'denegado', 'denegado'),
   'cuenta.crear':              fila('permitido', 'denegado', 'denegado', 'denegado', 'denegado'),
-  // El documento marca "Denegada" para el auditor, pero su definición es analizar los logs: se le permite.
+  // El Auditor analiza los logs en solo lectura; el Admin requiere autorización vigente.
   'logs.revisar':              fila('autorizacion', 'denegado', 'denegado', 'permitido', 'denegado'),
 
   'usuarios.listar':           fila('permitido', 'denegado', 'permitido', 'permitido', 'permitido'),

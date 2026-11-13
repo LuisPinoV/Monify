@@ -21,7 +21,8 @@ export const DIAS_PLAZO_DERECHOS = 30;
 
 // Saldo mínimo exigido para cerrar la cuenta (CLP).
 export const SALDO_PARA_CERRAR_CUENTA = 0;
-export const MAXIMO_INTENTOS_FALLIDOS = 5;
+// Regla oficial: tres intentos consecutivos bloquean temporalmente la cuenta.
+export const MAXIMO_INTENTOS_FALLIDOS = 3;
 
 export interface SeccionTerminos {
   id: string;
@@ -60,7 +61,7 @@ export const TERMINOS: DocumentoTerminos = {
       titulo: '2. Cuenta y credenciales',
       clausulas: [
         'Eres responsable de mantener la confidencialidad de tu contraseña. Monify solo almacena su hash y nunca puede recuperarla.',
-        `Tras ${MAXIMO_INTENTOS_FALLIDOS} intentos fallidos consecutivos de inicio de sesión tu cuenta se bloquea por seguridad y debe ser habilitada por un administrador.`,
+        `Tras ${MAXIMO_INTENTOS_FALLIDOS} intentos fallidos consecutivos de inicio de sesión tu cuenta se bloquea temporalmente por seguridad y debe ser habilitada por un administrador.`,
         'Todo acceso y acción realizados con tus credenciales se presumen hechos por ti.'
       ]
     },
@@ -99,7 +100,7 @@ export const TERMINOS: DocumentoTerminos = {
       titulo: '6. Registro de actividad y auditoría',
       clausulas: [
         'Monify registra una bitácora de tus acciones: qué hiciste, cuándo, por qué canal (web, móvil o API) y desde qué dispositivo. No se almacena tu dirección IP.',
-        'La bitácora es inalterable y es revisada por personal autorizado con fines de seguridad, cumplimiento y resolución de disputas.',
+        'La bitácora es inalterable. El Auditor la consulta en modo de solo lectura; el Admin solo puede consultarla cuando existe una autorización vigente otorgada por un Auditor.',
         'El personal de Monify solo accede a tus datos financieros según su rol, por necesidad justificada o con tu autorización expresa, y cada acceso queda auditado.'
       ]
     },

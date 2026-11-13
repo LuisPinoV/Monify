@@ -185,12 +185,15 @@ o `@Permiso`). Las reglas posibles son:
 - **Con autorización expresa**: el titular otorga acceso temporal (máximo 72 h)
   a un Auditor u Operador financiero desde "Privacidad y datos". Los logs del
   sistema se abren al Admin solo con una autorización otorgada por un Auditor.
+- **Auditoría de logs**: el Auditor es el responsable de analizar la bitácora en
+  modo de solo lectura. El Admin no puede revisarla por defecto: necesita una
+  autorización vigente de un Auditor. Ninguno de los dos roles puede eliminar
+  registros desde la API.
 - **Acceso a claves criptográficas**: denegado a todos los roles (no existe
   ningún endpoint que las exponga).
 
-Supuestos tomados donde el informe no es explícito: el Auditor puede revisar los
-logs (su función es analizarlos, aunque la tabla marca "Denegada") y para "Ver
-deuda" se le aplica el mismo criterio que para el historial (autorización expresa).
+Para "Ver deuda" se aplica el mismo criterio que para el historial (autorización
+expresa para el Auditor).
 
 ### Términos y Condiciones, consentimientos y no repudio
 
@@ -217,12 +220,27 @@ User-Agent). Es de solo anexado y cada registro encadena el hash del anterior:
 `GET /auditoria/integridad` recorre la cadena y detecta cualquier alteración o
 eliminación. Cada persona ve su propia actividad en `GET /usuarios/me/actividad`.
 
+La prohibición de almacenar hashes se refiere a hashes de credenciales, como
+contraseñas, tokens o códigos de autenticación. La bitácora sí almacena hashes
+de integridad y huellas técnicas, porque no permiten recuperar una credencial y
+son necesarios para detectar alteraciones.
+
+### Conservación de la bitácora
+
+Los plazos de 30 días para eventos de login y un año para eventos de
+consentimiento son plazos mínimos de conservación operativa, no autorizan un
+`DELETE` individual. `UserLogs` y `ConsentLogs` son de solo anexado: una
+eliminación aislada rompería la cadena de integridad y contradice la trazabilidad.
+Al vencer el plazo mínimo, los registros deben pasar a un archivo cifrado de
+solo lectura con su cadena y huella verificadas. Mientras ese procedimiento no
+esté automatizado, los registros se conservan y no se borran manualmente.
+
 ### Endpoints principales
 
 | Ruta | Acceso |
 | --- | --- |
 | `POST /usuarios` | Público: autoregistro con aceptación del TOS. |
-| `POST /auth/login` | Público. Bloqueo tras 5 intentos fallidos. |
+| `POST /auth/login` | Público. Bloqueo temporal tras 3 intentos fallidos consecutivos. |
 | `GET /terminos` | Público. |
 | `GET /salud` | Público: estado del servicio y entorno. |
 | `GET /usuarios/me` | Perfil propio. La corrección, la copia y la eliminación se piden en `/derechos`. |

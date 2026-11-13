@@ -147,8 +147,20 @@ CREATE TABLE IF NOT EXISTS "UserLogs" (
     CHECK (num_nonnulls("idUsuario", "idAdminRiesgo") <= 1)
 );
 
+-- Plazo de conservación de los registros de auditoría (Actividad 7): 5 años, el mínimo que exige la Ley 19.913 (UAF), art. 5.
+CREATE OR REPLACE FUNCTION fn_plazo_conservacion() RETURNS INTERVAL AS $$
+    SELECT INTERVAL '5 years';
+$$ LANGUAGE sql IMMUTABLE;
+
+-- Solo anexado. Única excepción (Actividad 7): la depuración controlada de fn_depurar_registros_vencidos puede borrar
+-- filas cuyo plazo de conservación venció. El trigger recibe como argumento la columna de fecha de la tabla; sin
+-- argumento (por ejemplo, EvidenciaNoRepudio) la tabla nunca admite DELETE.
 CREATE OR REPLACE FUNCTION fn_registro_inmutable() RETURNS trigger AS $$
 BEGIN
+    IF TG_OP = 'DELETE' AND TG_NARGS = 1 AND current_setting('monify.depuracion', true) = 'plazo_vencido'
+       AND (to_jsonb(OLD) ->> TG_ARGV[0])::timestamptz < now() - fn_plazo_conservacion() THEN
+        RETURN OLD;
+    END IF;
     RAISE EXCEPTION 'La tabla % es de solo anexado (auditoría y no repudio): no admite UPDATE ni DELETE', TG_TABLE_NAME;
 END;
 $$ LANGUAGE plpgsql;
@@ -156,7 +168,7 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS "tg_userlogs_inmutable" ON "UserLogs";
 CREATE TRIGGER "tg_userlogs_inmutable"
     BEFORE UPDATE OR DELETE ON "UserLogs"
-    FOR EACH ROW EXECUTE FUNCTION fn_registro_inmutable();
+    FOR EACH ROW EXECUTE FUNCTION fn_registro_inmutable('fechaAccion');
 
 DROP TRIGGER IF EXISTS "tg_evidencia_inmutable" ON "EvidenciaNoRepudio";
 CREATE TRIGGER "tg_evidencia_inmutable"
@@ -241,7 +253,7 @@ CREATE TABLE IF NOT EXISTS "ConsentLogs" (
 DROP TRIGGER IF EXISTS "tg_consentlogs_inmutable" ON "ConsentLogs";
 CREATE TRIGGER "tg_consentlogs_inmutable"
     BEFORE UPDATE OR DELETE ON "ConsentLogs"
-    FOR EACH ROW EXECUTE FUNCTION fn_registro_inmutable();
+    FOR EACH ROW EXECUTE FUNCTION fn_registro_inmutable('fechaHora');
 
 -- La aplicación declara canal y dispositivo con set_config(..., true) dentro de la transacción;
 -- un cambio hecho por fuera de la API queda registrado con canal "bd_directa".
@@ -364,7 +376,7 @@ CREATE TABLE IF NOT EXISTS "HistorialSolicitudDerecho" (
 DROP TRIGGER IF EXISTS "tg_historial_derecho_inmutable" ON "HistorialSolicitudDerecho";
 CREATE TRIGGER "tg_historial_derecho_inmutable"
     BEFORE UPDATE OR DELETE ON "HistorialSolicitudDerecho"
-    FOR EACH ROW EXECUTE FUNCTION fn_registro_inmutable();
+    FOR EACH ROW EXECUTE FUNCTION fn_registro_inmutable('fecha');
 
 -- Las solicitudes no se borran y siguen el flujo definido; los estados no pueden saltarse ni retroceder.
 CREATE OR REPLACE FUNCTION fn_solicitud_derecho_flujo() RETURNS trigger AS $$
@@ -515,6 +527,139 @@ DROP TRIGGER IF EXISTS "tg_rectificacion_inmutable" ON "RegistroRectificacion";
 CREATE TRIGGER "tg_rectificacion_inmutable"
     BEFORE UPDATE OR DELETE ON "RegistroRectificacion"
     FOR EACH ROW EXECUTE FUNCTION fn_rectificacion_inmutable();
+
+-- ---------------------------------------------------------------------------
+-- Actividad 7: alertas de acceso anómalo, revocación de sesiones y conservación de registros.
+-- Cambios aditivos: tres tablas nuevas y la función de depuración; no se renombra ni borra nada.
+-- ---------------------------------------------------------------------------
+
+-- Alertas de acceso anómalo (A1, A2, A3...). El detalle de la evidencia va cifrado (AES-256-GCM).
+CREATE TABLE IF NOT EXISTS "AlertaSeguridad" (
+    "idAlerta"      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    "codigo"        VARCHAR(4) NOT NULL CHECK ("codigo" ~ '^A[0-9]+$'),
+    "severidad"     VARCHAR(10) NOT NULL CHECK ("severidad" IN ('baja', 'media', 'alta')),
+    "idUsuario"     INTEGER REFERENCES "Usuario"("idUsuario") ON DELETE RESTRICT,
+    "idAdminRiesgo" INTEGER REFERENCES "AdministradorRiesgo"("idAdminRiesgo") ON DELETE RESTRICT,
+    "canal"         VARCHAR(20) NOT NULL,
+    "dispositivo"   VARCHAR(160) NOT NULL,
+    "descripcion"   TEXT NOT NULL,
+    "accionTomada"  TEXT NOT NULL,
+    "evidencia"     TEXT,
+    "estado"        VARCHAR(12) NOT NULL DEFAULT 'abierta' CHECK ("estado" IN ('abierta', 'revisada', 'cerrada')),
+    "creadaEn"      TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    "revisadaEn"    TIMESTAMPTZ,
+    "revisadaPor"   VARCHAR(40),
+    "notaRevision"  TEXT,
+    CHECK (num_nonnulls("idUsuario", "idAdminRiesgo") <= 1)
+);
+CREATE INDEX IF NOT EXISTS "idx_alerta_estado" ON "AlertaSeguridad"("estado", "creadaEn");
+
+-- Una alerta no se borra (salvo la depuración por plazo vencido) ni se reescribe: solo avanza de estado.
+CREATE OR REPLACE FUNCTION fn_alerta_flujo() RETURNS trigger AS $$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        IF current_setting('monify.depuracion', true) = 'plazo_vencido' AND OLD."creadaEn" < now() - fn_plazo_conservacion() THEN
+            RETURN OLD;
+        END IF;
+        RAISE EXCEPTION 'Las alertas de seguridad no se eliminan (AlertaSeguridad %)', OLD."idAlerta";
+    END IF;
+    IF (NEW."codigo", NEW."severidad", NEW."idUsuario", NEW."idAdminRiesgo", NEW."canal", NEW."dispositivo", NEW."descripcion",
+        NEW."accionTomada", NEW."evidencia", NEW."creadaEn")
+       IS DISTINCT FROM (OLD."codigo", OLD."severidad", OLD."idUsuario", OLD."idAdminRiesgo", OLD."canal", OLD."dispositivo",
+        OLD."descripcion", OLD."accionTomada", OLD."evidencia", OLD."creadaEn") THEN
+        RAISE EXCEPTION 'Una alerta solo admite registrar su revisión';
+    END IF;
+    IF OLD."estado" = 'cerrada' OR (OLD."estado" = 'revisada' AND NEW."estado" = 'abierta') THEN
+        RAISE EXCEPTION 'Transición de alerta no permitida: % -> %', OLD."estado", NEW."estado";
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "tg_alerta_flujo" ON "AlertaSeguridad";
+CREATE TRIGGER "tg_alerta_flujo"
+    BEFORE UPDATE OR DELETE ON "AlertaSeguridad"
+    FOR EACH ROW EXECUTE FUNCTION fn_alerta_flujo();
+
+-- Revocación de sesiones (contención): los JWT emitidos antes de "revocadaEn" dejan de valer.
+CREATE TABLE IF NOT EXISTS "SesionRevocada" (
+    "idRevocacion"  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    "idUsuario"     INTEGER REFERENCES "Usuario"("idUsuario") ON DELETE RESTRICT,
+    "idAdminRiesgo" INTEGER REFERENCES "AdministradorRiesgo"("idAdminRiesgo") ON DELETE RESTRICT,
+    "revocadaEn"    TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    "motivo"        VARCHAR(200) NOT NULL,
+    "idAlerta"      BIGINT REFERENCES "AlertaSeguridad"("idAlerta") ON DELETE RESTRICT,
+    CHECK (num_nonnulls("idUsuario", "idAdminRiesgo") = 1)
+);
+CREATE INDEX IF NOT EXISTS "idx_sesion_revocada_usuario" ON "SesionRevocada"("idUsuario");
+CREATE INDEX IF NOT EXISTS "idx_sesion_revocada_admin" ON "SesionRevocada"("idAdminRiesgo");
+DROP TRIGGER IF EXISTS "tg_sesion_revocada_inmutable" ON "SesionRevocada";
+CREATE TRIGGER "tg_sesion_revocada_inmutable"
+    BEFORE UPDATE OR DELETE ON "SesionRevocada"
+    FOR EACH ROW EXECUTE FUNCTION fn_registro_inmutable();
+
+-- Constancia de cada depuración por plazo vencido. Para la bitácora guarda el último hash eliminado: la verificación
+-- de integridad continúa la cadena desde ahí, así que borrar lo vencido no rompe la detección de alteraciones.
+CREATE TABLE IF NOT EXISTS "DepuracionRegistros" (
+    "idDepuracion"        BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    "fecha"               TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    "tabla"               VARCHAR(40) NOT NULL,
+    "registrosEliminados" INTEGER NOT NULL,
+    "fechaCorte"          TIMESTAMPTZ NOT NULL,
+    "ultimaSecuencia"     BIGINT,
+    "ultimoHashEliminado" VARCHAR(64)
+);
+DROP TRIGGER IF EXISTS "tg_depuracion_inmutable" ON "DepuracionRegistros";
+CREATE TRIGGER "tg_depuracion_inmutable"
+    BEFORE UPDATE OR DELETE ON "DepuracionRegistros"
+    FOR EACH ROW EXECUTE FUNCTION fn_registro_inmutable();
+
+-- Depuración controlada: borra solo lo que superó el plazo de conservación y deja constancia. La ejecuta la API al
+-- iniciar y una vez al día. Un DELETE manual sobre filas vigentes sigue siendo rechazado por los triggers.
+CREATE OR REPLACE FUNCTION fn_depurar_registros_vencidos() RETURNS TABLE ("tabla" TEXT, "eliminados" INTEGER) AS $$
+DECLARE
+    corte TIMESTAMPTZ := now() - fn_plazo_conservacion();
+    n INTEGER;
+    ultima BIGINT;
+    ultimo_hash VARCHAR(64);
+BEGIN
+    PERFORM set_config('monify.depuracion', 'plazo_vencido', true);
+
+    SELECT l."secuencia", l."hashRegistro" INTO ultima, ultimo_hash FROM "UserLogs" l
+    WHERE l."fechaAccion" < corte ORDER BY l."secuencia" DESC LIMIT 1;
+    IF ultima IS NOT NULL THEN
+        DELETE FROM "UserLogs" l WHERE l."secuencia" <= ultima AND l."fechaAccion" < corte;
+        GET DIAGNOSTICS n = ROW_COUNT;
+        INSERT INTO "DepuracionRegistros" ("tabla", "registrosEliminados", "fechaCorte", "ultimaSecuencia", "ultimoHashEliminado")
+        VALUES ('UserLogs', n, corte, ultima, ultimo_hash);
+        tabla := 'UserLogs'; eliminados := n; RETURN NEXT;
+    END IF;
+
+    DELETE FROM "ConsentLogs" c WHERE c."fechaHora" < corte;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    IF n > 0 THEN
+        INSERT INTO "DepuracionRegistros" ("tabla", "registrosEliminados", "fechaCorte") VALUES ('ConsentLogs', n, corte);
+        tabla := 'ConsentLogs'; eliminados := n; RETURN NEXT;
+    END IF;
+
+    DELETE FROM "HistorialSolicitudDerecho" h WHERE h."fecha" < corte;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    IF n > 0 THEN
+        INSERT INTO "DepuracionRegistros" ("tabla", "registrosEliminados", "fechaCorte") VALUES ('HistorialSolicitudDerecho', n, corte);
+        tabla := 'HistorialSolicitudDerecho'; eliminados := n; RETURN NEXT;
+    END IF;
+
+    DELETE FROM "AlertaSeguridad" a WHERE a."creadaEn" < corte
+        AND NOT EXISTS (SELECT 1 FROM "SesionRevocada" r WHERE r."idAlerta" = a."idAlerta");
+    GET DIAGNOSTICS n = ROW_COUNT;
+    IF n > 0 THEN
+        INSERT INTO "DepuracionRegistros" ("tabla", "registrosEliminados", "fechaCorte") VALUES ('AlertaSeguridad', n, corte);
+        tabla := 'AlertaSeguridad'; eliminados := n; RETURN NEXT;
+    END IF;
+
+    PERFORM set_config('monify.depuracion', '', true);
+END;
+$$ LANGUAGE plpgsql;
 
 -- Autorización expresa: el titular (o un auditor, para logs) permite a otro usuario interno ver cierto ámbito.
 CREATE TABLE IF NOT EXISTS "AutorizacionAcceso" (

@@ -32,7 +32,8 @@ const ACCIONES = {
   'solicitud_credito.ver': 'Ver solicitudes de crédito', 'credito.gestionar': 'Gestionar catálogo de créditos', 'riesgo.registrar': 'Registrar riesgo y deudas',
   'kyc.ver': 'Ver verificación de identidad', 'kyc.registrar': 'Registrar verificación de identidad',
   'consentimiento.gestionar': 'Gestionar consentimientos', 'autorizacion.gestionar': 'Otorgar autorizaciones de acceso',
-  'derechos.ejercer': 'Ejercer derechos (acceso, rectificación, supresión, oposición)', 'derechos.supervisar': 'Supervisar solicitudes de derechos'
+  'derechos.ejercer': 'Ejercer derechos (acceso, rectificación, supresión, oposición)', 'derechos.supervisar': 'Supervisar solicitudes de derechos',
+  'sesiones.revocar': 'Contener incidentes (revocar sesiones y bloquear)'
 };
 const AMBITOS = { financiera: 'Información financiera', movimientos: 'Historial de movimientos', deuda: 'Deudas', logs: 'Logs del sistema' };
 const FINALIDADES = {
@@ -74,20 +75,46 @@ function encabezados(extra = {}) {
   };
 }
 
-async function api(method, path, body) {
+// Alerta A3 (Actividad 7): ventana para confirmar la contraseña tras un login desde un dispositivo nuevo.
+function pedirContrasena(mensaje) {
+  return new Promise((resolve) => {
+    const dialogo = document.createElement('dialog');
+    dialogo.className = 'dialogo-verificacion';
+    dialogo.innerHTML = `<form method="dialog"><h3>Verificación adicional</h3><p>${escapeHtml(mensaje)}</p>
+      <input type="password" name="contrasena" required autocomplete="current-password" placeholder="Contraseña">
+      <div class="acciones-fila"><button class="btn btn-primary" value="ok">Confirmar</button><button class="btn" value="cancelar" formnovalidate>Cancelar</button></div></form>`;
+    document.body.appendChild(dialogo);
+    dialogo.addEventListener('close', () => {
+      const valor = dialogo.returnValue === 'ok' ? dialogo.querySelector('input').value : null;
+      dialogo.remove();
+      resolve(valor);
+    });
+    dialogo.showModal();
+  });
+}
+
+async function api(method, path, body, reintento = false) {
   const response = await fetch(path, {
     method,
     headers: encabezados(body === undefined ? {} : { 'Content-Type': 'application/json' }),
     body: body === undefined ? undefined : JSON.stringify(body)
   });
   const payload = await response.json().catch(() => ({}));
-  if (response.status === 401 && S.token && path !== '/auth/login') {
+  // Una contraseña mal escrita al verificar la identidad no cierra la sesión: solo un token inválido o revocado.
+  if (response.status === 401 && S.token && path !== '/auth/login' && path !== '/auth/verificacion-adicional' && !/\/verificar$/.test(path)) {
     cerrarSesion();
     throw new Error('tu sesión expiró o fue bloqueada; vuelve a iniciar sesión');
   }
   if (response.status === 403 && payload.codigo === 'CONSENTIMIENTO_REQUERIDO' && S.token) {
     await actualizarConsentimiento();
     abrirConsentimiento();
+  }
+  if (response.status === 403 && payload.codigo === 'VERIFICACION_ADICIONAL_REQUERIDA' && !reintento) {
+    const contrasena = await pedirContrasena(payload.message);
+    if (contrasena) {
+      await api('POST', '/auth/verificacion-adicional', { contrasena }, true);
+      return api(method, path, body, true);
+    }
   }
   if (!response.ok) {
     const mensaje = Array.isArray(payload.message) ? payload.message.join(', ') : payload.message;
@@ -558,7 +585,8 @@ async function vistaAdministracion() {
     const acciones = c.estadoCuenta === 'activa' ? [
       `<button class="btn-mini" data-bloqueo="${c.id}" data-cuenta="${c.cuenta}" data-valor="${!c.bloqueada}">${c.bloqueada ? 'Desbloquear' : 'Bloquear'}</button>`,
       c.cuenta === 'usuario' && cambiables.includes(c.rol) ? `<select class="btn-mini" data-rol="${c.id}">${cambiables.map((r) => `<option value="${r}" ${r === c.rol ? 'selected' : ''}>${ROLES[r]}</option>`).join('')}</select>` : '',
-      c.rol !== 'usuario' ? `<button class="btn-mini" data-contrasena="${c.id}" data-cuenta="${c.cuenta}">Nueva contraseña</button>` : ''
+      c.rol !== 'usuario' ? `<button class="btn-mini" data-contrasena="${c.id}" data-cuenta="${c.cuenta}">Nueva contraseña</button>` : '',
+      puede('sesiones.revocar') && !(c.cuenta === 'usuario' && c.id === S.sesion.id) ? `<button class="btn-mini" data-contener="${c.id}" data-cuenta="${c.cuenta}">Contener incidente</button>` : ''
     ].join('') : '';
     return `<tr><td>#${c.id}</td><td>${escapeHtml(c.nombre)}</td><td>${ROLES[c.rol] ?? c.rol}</td><td>${c.estadoCuenta === 'activa' ? (c.bloqueada ? '<span class="badge badge-rechazada">Bloqueada</span>' : '<span class="badge badge-verificada">Activa</span>') : '<span class="badge badge-pendiente">Eliminada (anónima)</span>'}</td><td>${formatDate(c.creadoEn)}</td><td><div class="acciones-fila">${acciones}</div></td></tr>`;
   });
@@ -590,6 +618,15 @@ async function vistaAdministracion() {
     try { await patchData(`/admin/usuarios/${select.dataset.rol}/rol`, { rol: select.value }); showToast('Rol actualizado'); } catch (error) { showToast(error.message, 'error'); }
     await vistaAdministracion();
   }));
+  pagina.querySelectorAll('[data-contener]').forEach((boton) => boton.addEventListener('click', async () => {
+    const motivo = window.prompt('Motivo de la contención (se revocan todas las sesiones y se bloquea la cuenta):');
+    if (!motivo) return;
+    const alertaId = window.prompt('ID de la alerta asociada (opcional):') || undefined;
+    try {
+      await postData('/admin/contencion', { cuenta: boton.dataset.cuenta, usuarioId: Number(boton.dataset.contener), motivo, alertaId, bloquear: true });
+      showToast('Sesiones revocadas y cuenta bloqueada'); await vistaAdministracion();
+    } catch (error) { showToast(error.message, 'error'); }
+  }));
   pagina.querySelectorAll('[data-contrasena]').forEach((boton) => boton.addEventListener('click', async () => {
     const contrasena = window.prompt('Nueva contraseña (mínimo 8 caracteres):');
     if (!contrasena) return;
@@ -601,9 +638,9 @@ async function vistaAuditoria() {
   const pagina = $('#page-auditoria');
   const params = new URLSearchParams(location.hash.split('?')[1] ?? '');
   params.set('limite', params.get('limite') || '100');
-  let logs; let evidencias; let error;
+  let logs; let evidencias; let alertas; let error;
   try {
-    [logs, evidencias] = await Promise.all([getData(`/auditoria/logs?${params}`), getData('/auditoria/evidencias?limite=50')]);
+    [logs, evidencias, alertas] = await Promise.all([getData(`/auditoria/logs?${params}`), getData('/auditoria/evidencias?limite=50'), getData('/auditoria/alertas')]);
   } catch (fallo) { error = fallo.message; }
   const esAuditor = S.sesion.rol === 'auditor';
   const [autorizaciones, beneficiarios] = esAuditor ? await Promise.all([getData('/autorizaciones'), getData('/autorizaciones/beneficiarios')]) : [[], []];
@@ -612,14 +649,22 @@ async function vistaAuditoria() {
   pagina.innerHTML = `${heading('SEGURIDAD', 'Auditoría y no repudio', 'Bitácora de solo anexado con hash encadenado: quién, qué acción, cuándo, por qué canal y desde qué dispositivo. Los detalles se guardan cifrados.')}
     ${error ? `<div class="alert alert-warning">${escapeHtml(error)}</div>` : `
     <form class="form-grid filtro-inline" id="filtro-logs">
-      ${campo('ID de titular', `<input type="number" name="usuarioId" min="1" value="${escapeHtml(params.get('usuarioId') ?? '')}">`)}
+      ${campo('ID de cuenta (titular o personal)', `<input type="number" name="usuarioId" min="1" value="${escapeHtml(params.get('usuarioId') ?? '')}">`)}
+      ${campo('ID de administrador de riesgo', `<input type="number" name="adminRiesgoId" min="1" value="${escapeHtml(params.get('adminRiesgoId') ?? '')}">`)}
       ${campo('Acción', `<input type="text" name="accion" placeholder="transaccion.crear" value="${escapeHtml(params.get('accion') ?? '')}">`)}
       ${campo('Desde', `<input type="date" name="desde" value="${escapeHtml(params.get('desde') ?? '')}">`)}
       ${campo('Hasta', `<input type="date" name="hasta" value="${escapeHtml(params.get('hasta') ?? '')}">`)}
       <button class="btn btn-primary" type="submit">Filtrar</button>
       <button class="btn btn-refresh" type="button" id="integridad-button">Verificar integridad de la cadena</button>
+      <button class="btn btn-refresh" type="button" id="linea-tiempo-button">Exportar línea de tiempo (SHA-256)</button>
     </form>
     <div id="integridad-resultado"></div>
+    <section class="content-grid">
+      ${panel('ALERTAS', 'Alertas de acceso anómalo', tabla(['ID', 'Fecha', 'Regla', 'Actor', 'Descripción', 'Acción tomada', 'Estado', ''], alertas.map((a) => `<tr><td>#${a.id}</td><td class="activity-date">${formatDate(a.creadaEn, true)}</td>
+        <td><span class="badge badge-${a.severidad === 'alta' ? 'rechazada' : 'pendiente'}">${escapeHtml(a.codigo)}</span> ${escapeHtml(a.nombre)}</td><td>${actor(a)}<br><small>${escapeHtml(a.dispositivo.slice(0, 30))}</small></td>
+        <td>${escapeHtml(a.descripcion)}</td><td>${escapeHtml(a.accionTomada)}</td><td>${escapeHtml(a.estado)}</td>
+        <td><div class="acciones-fila">${a.estado === 'abierta' ? `<button class="btn-mini" data-alerta="${a.id}" data-estado="revisada">Revisada</button>` : ''}${a.estado !== 'cerrada' ? `<button class="btn-mini" data-alerta="${a.id}" data-estado="cerrada">Cerrar</button>` : ''}</div></td></tr>`), 'Sin alertas.'), { contador: alertas.filter((a) => a.estado === 'abierta').length })}
+    </section>
     <section class="content-grid">
       ${panel('BITÁCORA', 'Registro de acciones', tabla(['#', 'Fecha', 'Actor', 'Acción', 'Resultado', 'Canal', 'Dispositivo', 'Recurso'], logs.map((l) => `<tr><td class="mono">${l.secuencia}</td><td class="activity-date">${formatDate(l.fechaAccion, true)}</td><td>${actor(l)}</td><td class="mono">${escapeHtml(l.accion)}</td><td>${resultadoBadge(l.resultado)}</td><td>${escapeHtml(l.canal)}</td><td title="${escapeHtml(l.dispositivo)}">${escapeHtml(l.dispositivo.slice(0, 40))}</td><td class="mono">${escapeHtml(l.recurso ?? '—')}</td></tr>`)), { contador: logs.length })}
     </section>
@@ -646,6 +691,22 @@ async function vistaAuditoria() {
         : `<div class="integridad integridad-error">✗ Cadena alterada en el registro #${escapeHtml(r.primerRegistroInvalido.secuencia)}: ${escapeHtml(r.primerRegistroInvalido.motivo)}</div>`;
     } catch (fallo) { showToast(fallo.message, 'error'); }
   });
+  $('#linea-tiempo-button')?.addEventListener('click', async () => {
+    const filtros = new URLSearchParams();
+    for (const [k, v] of new FormData($('#filtro-logs'))) if (v && k !== 'accion') filtros.set(k, k === 'hasta' ? `${v}T23:59:59` : v);
+    try {
+      const linea = await getData(`/auditoria/linea-tiempo?${filtros}`);
+      const enlace = document.createElement('a');
+      enlace.href = URL.createObjectURL(new Blob([JSON.stringify(linea, null, 2)], { type: 'application/json' }));
+      enlace.download = `monify-linea-tiempo-${linea.cadenaDeCustodia.huella.slice(0, 12)}.json`;
+      enlace.click();
+      URL.revokeObjectURL(enlace.href);
+      showToast(`${linea.totalEventos} eventos exportados · SHA-256 ${linea.cadenaDeCustodia.huella.slice(0, 12)}…`);
+    } catch (fallo) { showToast(`${fallo.message} (indica el actor y las fechas desde/hasta)`, 'error'); }
+  });
+  pagina.querySelectorAll('[data-alerta]').forEach((boton) => boton.addEventListener('click', async () => {
+    try { await patchData(`/auditoria/alertas/${boton.dataset.alerta}`, { estado: boton.dataset.estado }); showToast('Alerta actualizada'); await vistaAuditoria(); } catch (fallo) { showToast(fallo.message, 'error'); }
+  }));
   bindForm('autorizacion-logs-form', async (data) => {
     await postData('/autorizaciones', { beneficiarioId: data.get('beneficiarioId'), ambito: 'logs', horas: Number(data.get('horas')) });
     await vistaAuditoria();

@@ -76,7 +76,12 @@ async function login(correo, contrasena = CLAVE) {
   const victima = { nombre: 'Titular B', correo: `b${sufijo}@prueba.dev`, rut: `${sufijo}2-2`, fechaNacimiento: '1985-02-02', contrasena: 'ClaveTitularB1' };
   await api('POST', '/usuarios', { cuerpo: { ...victima, ...tos } });
   for (let i = 0; i < 5; i += 1) await api('POST', '/auth/login', { cuerpo: { correo: victima.correo, contrasena: 'adivinanza' } });
-  await prueba(2, 'tras 5 intentos fallidos la cuenta se bloquea, aun con la contraseña correcta', async () => espera(await api('POST', '/auth/login', { cuerpo: { correo: victima.correo, contrasena: victima.contrasena } }), 403));
+  await prueba(2, 'tras 3 intentos fallidos la cuenta se bloquea temporalmente (15 min), aun con la contraseña correcta', async () => {
+    const r = await api('POST', '/auth/login', { cuerpo: { correo: victima.correo, contrasena: victima.contrasena } });
+    espera(r, 429);
+    assert.equal(r.datos.codigo, 'BLOQUEO_TEMPORAL');
+    return `429 hasta ${r.datos.bloqueadoHasta}`;
+  });
 
   const admin = await login('admin@monify.dev');
   const auditor = await login('auditor@monify.dev');

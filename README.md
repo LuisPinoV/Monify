@@ -115,6 +115,7 @@ las cuentas usan la contraseña `Monify2026!` (configurable con `SEED_CONTRASENA
 | `pnpm run compilar` / `iniciar` | Compila a `dist/` y ejecuta la versión compilada. |
 | `pnpm run prueba:humo` | Prueba de punta a punta contra la API en ejecución (ver abajo). |
 | `pnpm run prueba:seguridad` | Pruebas de los controles de la Actividad 4 (accesos no autorizados rechazados). |
+| `pnpm run prueba:actividad7` | Actividad 7: permisos sobre los registros, conservación, alertas A1–A4 y simulación de un incidente reconstruido desde la bitácora (lee `PUERTO` y `DATABASE_URL` de `.env`). |
 | `pnpm run prueba:actividad6` | Pruebas de la Actividad 6: una solicitud concreta por mecanismo de derechos, incluida una de un solicitante no verificado, y los controles en la base (lee `PUERTO` y `DATABASE_URL` de `.env`). |
 | `pnpm run prueba:actividad5` | Pruebas de consentimiento y derechos de la Actividad 5, incluidos intentos directos en la base y las comprobaciones del diseño BDD v5 (lee `PUERTO` y `DATABASE_URL` de `.env`). |
 
@@ -127,7 +128,7 @@ ejemplo con la semilla cargada:
 Los scripts de `scripts/` imprimen cada caso con su resultado (aprobada,
 fallida u omitida) y un detalle verificable (códigos HTTP, ids de eventos,
 huellas), que es la evidencia usada en los informes. `prueba:seguridad`,
-`prueba:actividad5` y `prueba:actividad6` necesitan la API corriendo con la semilla cargada y nunca
+`prueba:actividad5`, `prueba:actividad6` y `prueba:actividad7` necesitan la API corriendo con la semilla cargada y nunca
 deben ejecutarse contra producción. Los informes entregados están en la raíz
 (`[Seguridad y Proteccion de Datos] Fun Gang - Actividad 2.pdf` y
 `[Seguridad y Proteccion de Datos] Fun Gang (2).pdf`) y los diagramas de flujo
@@ -240,7 +241,7 @@ esté automatizado, los registros se conservan y no se borran manualmente.
 | Ruta | Acceso |
 | --- | --- |
 | `POST /usuarios` | Público: autoregistro con aceptación del TOS. |
-| `POST /auth/login` | Público. Bloqueo temporal tras 3 intentos fallidos consecutivos. |
+| `POST /auth/login` | Público. Bloqueo temporal de 15 minutos tras 3 intentos fallidos en 15 minutos (alerta A1). |
 | `GET /terminos` | Público. |
 | `GET /salud` | Público: estado del servicio y entorno. |
 | `GET /usuarios/me` | Perfil propio. La corrección, la copia y la eliminación se piden en `/derechos`. |
@@ -259,6 +260,9 @@ esté automatizado, los registros se conservan y no se borran manualmente.
 | `POST /admin/cuentas`, `PATCH /admin/usuarios/:id/rol`, `POST /admin/cuentas/:id/contrasena` | Admin. |
 | `GET /rbac/matriz`, `GET /rbac/mis-permisos` | Admin / cualquier sesión. |
 | `GET /auditoria/logs`, `GET /auditoria/integridad`, `GET /auditoria/evidencias` | Auditor (Admin con autorización). |
+| `GET /auditoria/alertas`, `PATCH /auditoria/alertas/:id`, `GET /auditoria/linea-tiempo`, `GET /auditoria/politica` | Auditor (Admin con autorización): alertas, línea de tiempo con SHA-256 y catálogo/plazos (Actividad 7). |
+| `POST /admin/contencion` | Admin: revoca las sesiones (JWT) de una cuenta y, opcionalmente, la bloquea (Actividad 7). |
+| `POST /auth/verificacion-adicional` | Cualquier sesión: confirma la contraseña tras un login desde un dispositivo nuevo (alerta A3). |
 
 ### Panel web
 
@@ -383,6 +387,73 @@ oposición es granular.
 - `RegistroRectificacion` (`idSolicitudDerecho`, `idUsuario`, `campo`, `huellaAnterior`, `huellaNueva`, `fecha`),
   de solo anexado (trigger `fn_rectificacion_inmutable`). Solo la supresión puede borrar sus huellas.
 
+## Actividad 7: registro de auditoría, alertas y respuesta a incidentes
+
+La bitácora (`UserLogs`, solo anexado, hash encadenado y detalle cifrado) existe desde la Actividad 4. En esta
+actividad se formalizó y se completó:
+
+| Punto | Implementación |
+| --- | --- |
+| 1. Eventos y campos | Catálogo formal (evento, actor, datos registrados, datos excluidos) en `src/modulos/auditoria/catalogo-eventos.ts`, publicado en `GET /auditoria/politica`. |
+| 2. Registro sin datos | El interceptor global ahora agrega el titular consultado al recurso (`GET /informacion-financiera titular:16`, solo el id). Nunca se guardan el cuerpo ni la respuesta. |
+| 3. Protección y conservación | Matriz de permisos sobre los registros (abajo) y plazo de **5 años** (Ley 19.913, art. 5) con depuración diaria controlada. |
+| 4. Alertas | A1, A2, A3 y A4 en la tabla `AlertaSeguridad`, visibles y cerrables en el panel del Auditor. |
+| 5. Plan de respuesta | Plan de la Actividad 5 actualizado en el informe PDF: severidad, responsables, escalamiento, plazos y contenido de la notificación. |
+| 6. Simulación | `pnpm run prueba:actividad7`: incidente simulado y reconstruido desde la bitácora. |
+
+### Permisos sobre los registros
+
+| Registro | Acceso | Resto |
+| --- | --- | --- |
+| Bitácora, integridad, evidencias, alertas, política y línea de tiempo | Auditor | Admin solo con una autorización temporal de un Auditor; los demás roles reciben 403. |
+| Bitácora propia (`GET /usuarios/me/actividad`) | Cada cuenta | — |
+| Historial de consentimientos / solicitudes de derechos | El propio titular | Admin y Auditor ven solo estados y plazos de las solicitudes. |
+| Contención (`POST /admin/contencion`) | Admin (`sesiones.revocar`) | 403 |
+| Escritura directa en la base | Nadie | Los triggers rechazan UPDATE y DELETE; solo la depuración por plazo vencido borra. |
+
+### Conservación: 5 años
+
+`fn_depurar_registros_vencidos()` se ejecuta al iniciar la API y cada 24 horas. Borra solo lo que tiene más de 5 años
+(`fn_plazo_conservacion()`) en `UserLogs`, `ConsentLogs`, `HistorialSolicitudDerecho` y `AlertaSeguridad`, y deja
+constancia en `DepuracionRegistros`. Para la bitácora guarda el último hash eliminado: `GET /auditoria/integridad`
+continúa la cadena desde ahí. El trigger de solo anexado vuelve a comprobar la antigüedad, así que un DELETE manual
+sobre registros vigentes se rechaza aunque se active el modo de depuración. Las evidencias de no repudio y los
+registros financieros bloqueados tras una supresión se conservan como máximo 5 años desde que termina la operación o
+desde el cierre de la cuenta.
+
+Justificación: la Ley 19.913 (UAF), art. 5, exige conservar al menos 5 años los registros de las operaciones; la
+Recomendación 11 del GAFI fija el mismo mínimo. La Ley 21.719 exige limitar la conservación al tiempo necesario, por
+eso no se conservan más allá de ese mínimo. (HIPAA es una ley de salud de EE. UU. y no aplica.) La justificación
+también está en el código (`BASE_LEGAL_CONSERVACION`, en `GET /auditoria/politica`).
+
+### Alertas de acceso anómalo
+
+| Alerta | Disparador | Respuesta |
+| --- | --- | --- |
+| A1 | 3 logins fallidos en 15 min en la misma cuenta, o 10 fallos en cuentas distintas desde el mismo dispositivo en 10 min | La cuenta queda bloqueada 15 min y se levanta sola (`429 BLOQUEO_TEMPORAL`, aun con la contraseña correcta); ya no hace falta que un Admin la habilite. Alerta y aviso al titular (simulado). El dispositivo queda bloqueado 10 min para iniciar sesión. |
+| A2 | Un operador o administrador de riesgo consulta más de 20 titulares distintos en 10 min | Alerta de severidad alta al Auditor y revisión de la sesión; el Admin puede contener. |
+| A3 | Login desde un canal o dispositivo nuevo seguido, en menos de 30 min, de una transacción, alta de tarjeta, solicitud de crédito o solicitud de cambio de datos | Titular: `403 VERIFICACION_ADICIONAL_REQUERIDA` hasta confirmar la contraseña (el panel abre una ventana). Personal: alerta al Auditor. |
+| A4 | 5 o más accesos denegados (403) del mismo actor en 10 min | Alerta al Auditor. |
+
+Las reglas se calculan sobre la propia bitácora. El dispositivo es el declarado por el cliente (`X-Dispositivo` o
+User-Agent), así que la regla por dispositivo es una defensa básica, no una identificación fuerte.
+
+### Contención y línea de tiempo
+
+- `POST /admin/contencion` (`{ usuarioId, cuenta, motivo, alertaId, bloquear }`) registra una fila en `SesionRevocada`.
+  El guard rechaza todo JWT emitido antes de esa fecha (claim `emitidoEn`) y, si se pide, bloquea la cuenta.
+- `GET /auditoria/logs` filtra por `usuarioId`, `adminRiesgoId`, `accion`, `desde` y `hasta`.
+- `GET /auditoria/linea-tiempo?usuarioId=…&desde=…&hasta=…` exporta los eventos en orden cronológico con su huella
+  SHA-256, una firma RSA-SHA256 y el estado de la cadena (cadena de custodia). La exportación queda registrada como
+  `auditoria.exportar`.
+
+### Cambios de esquema (aditivos)
+
+Tablas `AlertaSeguridad` (solo admite registrar la revisión), `SesionRevocada` y `DepuracionRegistros` (solo anexado).
+Funciones `fn_plazo_conservacion` y `fn_depurar_registros_vencidos`. `fn_registro_inmutable` recibe ahora la columna de
+fecha de cada tabla para permitir únicamente la depuración por plazo vencido. Una base de la Actividad 6 se migra sola
+al iniciar.
+
 ## Protección de datos
 
 El módulo global `src/seguridad` contiene `ServicioCifrado` (AES-256-GCM con
@@ -496,8 +567,8 @@ seudonimizados y cifrados (no existe un seed SQL directo).
 con bcrypt y firma un JWT (HS256, 1 hora) con `JWT_SECRET`. El token solo lleva
 el id, el tipo de cuenta y el rol, sin datos personales. En cada petición el
 guard global vuelve a leer la cuenta, así que un bloqueo, un cambio de rol o una
-eliminación aplican de inmediato. Tras 5 intentos fallidos la cuenta se bloquea
-y solo un Admin puede habilitarla.
+eliminación aplican de inmediato. Tras 3 intentos fallidos en 15 minutos la cuenta se bloquea
+temporalmente y el bloqueo se levanta solo a los 15 minutos (alerta A1, Actividad 7).
 
 Genera la clave de firma para desarrollo con `openssl rand -hex 32` y guárdala
 únicamente en `.env`.

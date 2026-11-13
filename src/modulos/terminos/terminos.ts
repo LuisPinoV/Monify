@@ -23,6 +23,8 @@ export const DIAS_PLAZO_DERECHOS = 30;
 export const SALDO_PARA_CERRAR_CUENTA = 0;
 // Regla oficial: tres intentos consecutivos bloquean temporalmente la cuenta.
 export const MAXIMO_INTENTOS_FALLIDOS = 3;
+// Actividad 7 (alerta A1): el bloqueo por intentos fallidos es temporal y se levanta solo a los 15 minutos.
+export const MINUTOS_BLOQUEO_TEMPORAL = 15;
 
 export interface SeccionTerminos {
   id: string;
@@ -61,7 +63,7 @@ export const TERMINOS: DocumentoTerminos = {
       titulo: '2. Cuenta y credenciales',
       clausulas: [
         'Eres responsable de mantener la confidencialidad de tu contraseña. Monify solo almacena su hash y nunca puede recuperarla.',
-        `Tras ${MAXIMO_INTENTOS_FALLIDOS} intentos fallidos consecutivos de inicio de sesión tu cuenta se bloquea temporalmente por seguridad y debe ser habilitada por un administrador.`,
+        `Tras ${MAXIMO_INTENTOS_FALLIDOS} intentos fallidos de inicio de sesión en ${MINUTOS_BLOQUEO_TEMPORAL} minutos tu cuenta se bloquea temporalmente por seguridad; el bloqueo se levanta solo a los ${MINUTOS_BLOQUEO_TEMPORAL} minutos y te avisamos por correo.`,
         'Todo acceso y acción realizados con tus credenciales se presumen hechos por ti.'
       ]
     },

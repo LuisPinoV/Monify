@@ -84,6 +84,18 @@ Para conservar los datos, usa `docker compose down` sin `-v`.
 
 `SolicitudDerecho.tipoDerecho` admite además `oposicion` (la migración reemplaza el CHECK si hace falta).
 
+## Tablas de la Actividad 7
+
+| Tabla | Contenido | Protección |
+| --- | --- | --- |
+| `AlertaSeguridad` | Alertas A1–A4: regla, severidad, actor, canal, dispositivo, descripción, acción tomada, evidencia cifrada y revisión. | Trigger: no se borra (salvo por plazo vencido) y solo admite registrar la revisión. |
+| `SesionRevocada` | Revocaciones de sesión de una contención: cuenta, fecha, motivo y alerta. | Solo anexado. |
+| `DepuracionRegistros` | Constancia de cada depuración por plazo vencido (tabla, cantidad, fecha de corte y último hash de la bitácora). | Solo anexado. |
+
+Plazo de conservación: 5 años (`fn_plazo_conservacion()`, Ley 19.913 art. 5). `fn_depurar_registros_vencidos()` borra lo vencido en
+`UserLogs`, `ConsentLogs`, `HistorialSolicitudDerecho` y `AlertaSeguridad`; `fn_registro_inmutable` recibe la columna
+de fecha de cada tabla y rechaza cualquier otro UPDATE o DELETE.
+
 ## Cambios del diagrama BDD v5
 
 | Cambio | Detalle |

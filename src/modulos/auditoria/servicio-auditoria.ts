@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { BaseDatos } from '../../base-datos';
 import { PersistenciaCifrada } from '../../seguridad/persistencia-cifrada';
 import { ServicioCifrado } from '../../seguridad/servicio-cifrado';
@@ -161,9 +162,53 @@ export class ServicioAuditoria {
     }));
   }
 
+  // Actividad 7, punto 6: línea de tiempo de un actor y un rango, en orden cronológico, para reconstruir un incidente.
+  // Se entrega con una huella SHA-256 y una firma RSA (cadena de custodia) y el estado de la cadena de hashes.
+  async lineaTiempo(filtros: { usuarioId?: number; adminRiesgoId?: number; desde?: Date; hasta?: Date }, exportadoPor: string) {
+    const registros = (await this.listar({ ...filtros, limite: 500 })).reverse();
+    const integridad = await this.verificarIntegridad();
+    const eventos = registros.map(({ id, secuencia, usuarioId, adminRiesgoId, fechaAccion, accion, resultado, canal, dispositivo, recurso, detalle }) => ({
+      id, secuencia, usuarioId, adminRiesgoId, fechaAccion, accion, resultado, canal, dispositivo, recurso,
+      // De los detalles solo se exportan metadatos (código HTTP, motivo, regla), nunca datos personales.
+      detalle: detalle ? Object.fromEntries(Object.entries(detalle).filter(([clave]) => ['estado', 'motivo', 'intentos', 'regla', 'accionRequerida', 'alerta', 'nivel'].includes(clave))) : null
+    }));
+    const contenido = JSON.stringify(eventos);
+    const huella = createHash('sha256').update(contenido).digest('hex');
+    const generadoEn = new Date().toISOString();
+    return {
+      formato: 'monify.linea-tiempo/1', generadoEn, exportadoPor,
+      filtros: {
+        usuarioId: filtros.usuarioId ?? null, adminRiesgoId: filtros.adminRiesgoId ?? null,
+        desde: filtros.desde?.toISOString() ?? null, hasta: filtros.hasta?.toISOString() ?? null
+      },
+      totalEventos: eventos.length, eventos,
+      cadenaDeCustodia: {
+        algoritmo: 'SHA-256', alcance: 'JSON.stringify(eventos)', huella,
+        firma: this.cifrado.firmar(`${huella}|${generadoEn}|${exportadoPor}`), firmaAlgoritmo: 'RSA-SHA256 sobre "huella|generadoEn|exportadoPor"',
+        bitacoraIntegra: integridad.valida, registrosVerificados: integridad.registrosVerificados
+      }
+    };
+  }
+
+  // Actividad 7, punto 3: borra lo que superó el plazo de conservación (5 años, Ley 19.913 art. 5) mediante la función controlada de la base.
+  async depurarVencidos(): Promise<{ tabla: string; eliminados: number }[]> {
+    const r = await this.baseDatos.consultar<{ tabla: string; eliminados: number }>('SELECT * FROM fn_depurar_registros_vencidos()');
+    if (r.rows.length > 0) {
+      await this.intentarRegistrar({
+        accion: 'auditoria.depuracion', resultado: 'exito', contexto: { canal: 'api', dispositivo: SISTEMA },
+        detalle: { tablas: r.rows.map((f) => `${f.tabla}:${f.eliminados}`) }
+      });
+    }
+    return r.rows;
+  }
+
   async verificarIntegridad(): Promise<ResultadoIntegridad> {
-    let ultima = '0';
-    let esperado = HASH_GENESIS;
+    // Si hubo depuración por plazo vencido, la cadena continúa desde el último hash eliminado (constancia en DepuracionRegistros).
+    const ancla = await this.baseDatos.consultar<{ ultimaSecuencia: string; ultimoHashEliminado: string }>(
+      `SELECT "ultimaSecuencia", "ultimoHashEliminado" FROM "DepuracionRegistros" WHERE "tabla" = 'UserLogs' ORDER BY "idDepuracion" DESC LIMIT 1`
+    );
+    let ultima = ancla.rows[0] ? String(ancla.rows[0].ultimaSecuencia) : '0';
+    let esperado = ancla.rows[0]?.ultimoHashEliminado ?? HASH_GENESIS;
     let verificados = 0;
     for (;;) {
       const lote = await this.baseDatos.consultar<FilaLog>(

@@ -38,7 +38,9 @@ export const ACCIONES = [
   'autorizacion.gestionar',
   // Actividades 5 y 6: ejercicio de derechos (acceso y portabilidad, rectificación, supresión y oposición)
   'derechos.ejercer',
-  'derechos.supervisar'
+  'derechos.supervisar',
+  // Actividad 7: contención de incidentes (revocar sesiones y bloquear la cuenta)
+  'sesiones.revocar'
 ] as const;
 export type Accion = (typeof ACCIONES)[number];
 
@@ -75,7 +77,9 @@ export const MATRIZ_PERMISOS: Record<Accion, Fila> = {
   'autorizacion.gestionar':    fila('denegado', 'propio', 'denegado', 'permitido', 'denegado'),
   // Solo el propio titular ejerce sus derechos; el Admin y el Auditor supervisan los plazos sin ver los datos pedidos.
   'derechos.ejercer':          fila('denegado', 'propio', 'denegado', 'denegado', 'denegado'),
-  'derechos.supervisar':       fila('permitido', 'denegado', 'denegado', 'permitido', 'denegado')
+  'derechos.supervisar':       fila('permitido', 'denegado', 'denegado', 'permitido', 'denegado'),
+  // Actividad 7: el Auditor detecta y el Admin contiene (revoca sesiones y bloquea); nadie más.
+  'sesiones.revocar':          fila('permitido', 'denegado', 'denegado', 'denegado', 'denegado')
 };
 
 export const AMBITO_POR_ACCION: Partial<Record<Accion, AmbitoAutorizacion>> = {

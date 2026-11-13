@@ -17,6 +17,7 @@ import { ModuloSeguridad } from './seguridad/modulo-seguridad';
 import { ModuloAutenticacion } from './modulos/autenticacion/modulo-autenticacion';
 import { Publica } from './modulos/autenticacion/publico.decorador';
 import { ServicioAdminInicial } from './modulos/administracion/servicio-admin-inicial';
+import { ServicioAuditoria } from './modulos/auditoria/servicio-auditoria';
 
 @Controller('salud')
 class ControladorSalud {
@@ -58,6 +59,11 @@ export async function iniciar(): Promise<void> {
   // init() ejecuta los onModuleInit (esquema y bóveda) antes de crear el Admin inicial.
   await aplicacion.init();
   await aplicacion.get(ServicioAdminInicial).asegurar();
+  // Actividad 7: depuración de los registros cuyo plazo de conservación (5 años) venció, al iniciar y una vez al día.
+  const auditoria = aplicacion.get(ServicioAuditoria);
+  const depurar = () => auditoria.depurarVencidos().catch((error: Error) => console.error(`Depuración de registros fallida: ${error.message}`));
+  await depurar();
+  setInterval(depurar, 24 * 60 * 60 * 1000).unref();
   const puerto = Number(process.env.PUERTO ?? 3000);
   await aplicacion.listen(puerto);
 }

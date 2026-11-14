@@ -1,0 +1,11 @@
+# E6: titular crea una transaccion ficticia
+
++ curl --request POST http://localhost:3000/transacciones [credenciales y cuerpo omitidos]
+{"id":"33","usuarioId":"16","tarjetaId":"13","monto":1000,"creadaEn":"2026-11-14T03:17:33.130Z","evidenciaId":"2c27096f-676a-45df-93b3-3315c241eb85","saldoTarjeta":1000}
+HTTP_STATUS:201
++ psql "$DATABASE_URL" -X -P pager=off -c SELECT\ \"secuencia\"\,\ \"fechaAccion\"\ AS\ hora\,\ \"idUsuario\"\,\ \"accion\"\,\ \"resultado\"\,\ \"canal\"\,\ left\(\"dispositivo\"\,20\)\ AS\ dispositivo\,\ \"recurso\"\,\ left\(\"hashPrevio\"\,16\)\ AS\ hash_previo\,\ left\(\"hashRegistro\"\,16\)\ AS\ hash\ FROM\ \"UserLogs\"\ WHERE\ \"idUsuario\"\ =\ 16\ AND\ \"accion\"\ =\ \'transaccion.crear\'\ ORDER\ BY\ \"secuencia\"\ DESC\ LIMIT\ 5\;
+ secuencia |            hora            | idUsuario |      accion       | resultado | canal |     dispositivo     |       recurso       |   hash_previo    |       hash       
+-----------+----------------------------+-----------+-------------------+-----------+-------+---------------------+---------------------+------------------+------------------
+        41 | 2026-11-14 00:17:33.135+00 |        16 | transaccion.crear | exito     | api   | evidencia-auditoria | POST /transacciones | 080508872693b630 | e509007060915ba5
+(1 row)
+

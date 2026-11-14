@@ -5,6 +5,7 @@ import type { IncomingHttpHeaders } from 'node:http';
 import { contextoDesdeEncabezados } from '../../utilidades/contexto-cliente';
 import { ServicioAlertas } from '../auditoria/servicio-alertas';
 import { ServicioAuditoria } from '../auditoria/servicio-auditoria';
+import { sanitizarRecurso } from '../auditoria/sanitizador-auditoria';
 import { PERMISO, SIN_CONSENTIMIENTO, SOLO_AUTENTICADO } from '../autorizacion/decoradores';
 import { reglaPara, type Accion } from '../autorizacion/permisos';
 import type { Sesion } from '../autorizacion/roles';
@@ -16,7 +17,14 @@ interface Solicitud {
   headers: IncomingHttpHeaders & { authorization?: string };
   method: string;
   path: string;
+  query?: Record<string, unknown>;
+  body?: Record<string, unknown>;
   sesion?: Sesion;
+}
+
+function consultaTitular(solicitud: Solicitud): boolean {
+  const valor = solicitud.query?.usuarioId ?? solicitud.body?.usuarioId ?? (/^\/usuarios\/\d+/.test(solicitud.path) ? solicitud.path.split('/')[2] : undefined);
+  return typeof valor === 'number' || (typeof valor === 'string' && /^\d+$/.test(valor));
 }
 
 /**
@@ -64,7 +72,7 @@ export class GuardJwt implements CanActivate {
       if (reglaPara(sesion.rol, accion) === 'denegado') {
         await this.auditoria.intentarRegistrar({
           actor: sesion, accion: 'acceso_denegado', resultado: 'denegado', contexto: contextoDesdeEncabezados(solicitud.headers),
-          recurso: [solicitud.method, solicitud.path].join(' ').slice(0, 120), detalle: { accionRequerida: accion, rol: sesion.rol }
+          recurso: sanitizarRecurso(`${solicitud.method} ${solicitud.path}`), detalle: { accionRequerida: accion, rol: sesion.rol }
         });
         await this.alertas.evaluarDenegaciones(sesion, contextoCliente(solicitud));
         throw new ForbiddenException('tu rol no tiene permiso para esta acción');
@@ -79,14 +87,15 @@ export class GuardJwt implements CanActivate {
   // Alerta A3 (Actividad 7): operaciones sensibles del titular tras un login desde un canal o dispositivo nuevo.
   private async exigirVerificacionAdicional(sesion: Sesion, solicitud: Solicitud, accion: Accion): Promise<void> {
     const sensible = OPERACIONES_SENSIBLES.includes(accion) || (accion === 'derechos.ejercer' && solicitud.method === 'POST' && solicitud.path === '/derechos/solicitudes');
-    if (sesion.rol !== 'usuario' || !sensible) return;
+    const accesoPersonalATitular = sesion.rol !== 'usuario' && consultaTitular(solicitud);
+    if (!sensible && !accesoPersonalATitular) return;
     const contexto = contextoDesdeEncabezados(solicitud.headers);
     try {
       await this.alertas.exigirVerificacionAdicional(sesion, contexto, accion);
     } catch (error) {
       await this.auditoria.intentarRegistrar({
         actor: sesion, accion: 'acceso_denegado', resultado: 'denegado', contexto,
-        recurso: [solicitud.method, solicitud.path].join(' ').slice(0, 120), detalle: { motivo: 'verificacion_adicional', accionRequerida: accion }
+        recurso: sanitizarRecurso(`${solicitud.method} ${solicitud.path}`), detalle: { motivo: 'verificacion_adicional', accionRequerida: accion }
       });
       await this.alertas.evaluarDenegaciones(sesion, contexto);
       throw error;
@@ -101,7 +110,7 @@ export class GuardJwt implements CanActivate {
     if (pendientes.length === 0) return;
     await this.auditoria.intentarRegistrar({
       actor: sesion, accion: 'acceso_denegado', resultado: 'denegado', contexto: contextoDesdeEncabezados(solicitud.headers),
-      recurso: [solicitud.method, solicitud.path].join(' ').slice(0, 120), detalle: { motivo: 'consentimiento_pendiente', pendientes }
+      recurso: sanitizarRecurso(`${solicitud.method} ${solicitud.path}`), detalle: { motivo: 'consentimiento_pendiente', pendientes }
     });
     await this.alertas.evaluarDenegaciones(sesion, contextoCliente(solicitud));
     throw new ForbiddenException({

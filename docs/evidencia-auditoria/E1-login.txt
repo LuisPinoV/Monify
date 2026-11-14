@@ -1,0 +1,30 @@
+# E1: login exitoso y tres logins fallidos
+
+Cuenta ficticia separada: cuenta.e1.27112@prueba.dev
+
++ curl --request POST http://localhost:3000/auth/login [credenciales y cuerpo omitidos]
+{"accessToken":"[token oculto]","usuario":{"id":"17","cuenta":"usuario","rol":"usuario"},"requiereConsentimiento":false,"finalidadesPendientes":[]}
+HTTP_STATUS:200
++ curl --request POST http://localhost:3000/auth/login [credenciales y cuerpo omitidos]
+{"message":"correo o contraseña incorrectos","error":"Unauthorized","statusCode":401}
+HTTP_STATUS:401
++ curl --request POST http://localhost:3000/auth/login [credenciales y cuerpo omitidos]
+{"message":"correo o contraseña incorrectos","error":"Unauthorized","statusCode":401}
+HTTP_STATUS:401
++ curl --request POST http://localhost:3000/auth/login [credenciales y cuerpo omitidos]
+{"message":"correo o contraseña incorrectos","error":"Unauthorized","statusCode":401}
+HTTP_STATUS:401
++ psql "$DATABASE_URL" -X -P pager=off -c SELECT\ \"secuencia\"\,\ \"fechaAccion\"\ AS\ hora\,\ \"idUsuario\"\,\ \"accion\"\,\ \"resultado\"\,\ \"canal\"\,\ left\(\"dispositivo\"\,20\)\ AS\ dispositivo\,\ \"recurso\"\,\ left\(\"hashPrevio\"\,16\)\ AS\ hash_previo\,\ left\(\"hashRegistro\"\,16\)\ AS\ hash\ FROM\ \"UserLogs\"\ WHERE\ \"accion\"\ IN\ \(\'auth.login\'\,\'auth.cuenta_bloqueada\'\)\ ORDER\ BY\ \"secuencia\"\ DESC\ LIMIT\ 10\;
+ secuencia |            hora            | idUsuario |        accion         | resultado | canal |     dispositivo     | recurso |   hash_previo    |       hash       
+-----------+----------------------------+-----------+-----------------------+-----------+-------+---------------------+---------+------------------+------------------
+        25 | 2026-11-14 00:17:32.757+00 |        17 | auth.cuenta_bloqueada | exito     | api   | evidencia-auditoria |         | 766d92406f181480 | 7e9913eda4bdc70c
+        24 | 2026-11-14 00:17:32.752+00 |        17 | auth.login            | fallo     | api   | evidencia-auditoria |         | de710df5696fe7a4 | 766d92406f181480
+        23 | 2026-11-14 00:17:32.544+00 |        17 | auth.login            | fallo     | api   | evidencia-auditoria |         | b346e5222d97b0c4 | de710df5696fe7a4
+        22 | 2026-11-14 00:17:32.337+00 |        17 | auth.login            | fallo     | api   | evidencia-auditoria |         | e5b670794bbe3210 | b346e5222d97b0c4
+        21 | 2026-11-14 00:17:32.129+00 |        17 | auth.login            | exito     | api   | evidencia-auditoria |         | 4fd9d749a9d52a73 | e5b670794bbe3210
+        18 | 2026-11-14 00:17:24.046+00 |        16 | auth.login            | exito     | api   | evidencia-auditoria |         | 9010c9ec698a2e67 | 2d6c5daa98be2720
+        16 | 2026-11-14 00:17:23.573+00 |           | auth.login            | exito     | api   | evidencia-auditoria |         | c70e3ad7e8e0f539 | 919c203cd75a351b
+        15 | 2026-11-14 00:17:23.368+00 |         2 | auth.login            | exito     | api   | evidencia-auditoria |         | cdc200af8129b606 | c70e3ad7e8e0f539
+        14 | 2026-11-14 00:17:23.165+00 |         1 | auth.login            | exito     | api   | evidencia-auditoria |         | 0c797d18fededb9f | cdc200af8129b606
+(9 rows)
+

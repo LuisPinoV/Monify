@@ -4,7 +4,7 @@ import type { Sesion } from '../autorizacion/roles';
 import { ServicioAutorizacion } from '../autorizacion/servicio-autorizacion';
 import type { ContextoCliente } from '../../utilidades/contexto-cliente';
 import { BASE_LEGAL_CONSERVACION, CAMPOS_REGISTRO, CATALOGO_EVENTOS, PERMISOS_REGISTROS, PLAZOS_CONSERVACION } from './catalogo-eventos';
-import { REGLAS_ALERTA, ServicioAlertas } from './servicio-alertas';
+import { PLAN_ALERTAS, REGLAS_ALERTA, ServicioAlertas } from './servicio-alertas';
 import { ServicioAuditoria } from './servicio-auditoria';
 import { ServicioNoRepudio } from './servicio-no-repudio';
 
@@ -105,7 +105,7 @@ export class ControladorAuditoria {
     await this.autorizacion.alcance(sesion, 'logs.revisar', { motivo, contexto });
     return {
       campos: CAMPOS_REGISTRO, eventos: CATALOGO_EVENTOS, conservacion: { plazos: PLAZOS_CONSERVACION, baseLegal: BASE_LEGAL_CONSERVACION },
-      permisos: PERMISOS_REGISTROS, alertas: REGLAS_ALERTA
+      permisos: PERMISOS_REGISTROS, alertas: REGLAS_ALERTA, planAlertas: PLAN_ALERTAS
     };
   }
 

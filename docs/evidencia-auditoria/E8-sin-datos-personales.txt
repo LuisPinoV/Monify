@@ -1,0 +1,16 @@
+# E8: comprobacion de ausencia de datos personales en UserLogs
+
++ psql "$DATABASE_URL" -X -P pager=off -c SELECT\ count\(\*\)\ FROM\ \"UserLogs\"\ WHERE\ \"recurso\"\ ~\ \'\[0-9\]\{1\,2\}\\\\.\?\[0-9\]\{3\}\\\\.\?\[0-9\]\{3\}-\[0-9kK\]\'\ OR\ \"recurso\"\ LIKE\ \'%@%\'\ OR\ \"recurso\"\ ~\ \'\[0-9\]\{9\,\}\'\;
+ count 
+-------
+     0
+(1 row)
+
++ psql "$DATABASE_URL" -X -P pager=off -c SELECT\ \"detalle\"\ FROM\ \"UserLogs\"\ ORDER\ BY\ \"secuencia\"\ DESC\ LIMIT\ 3\;
+                                                      detalle                                                      
+-------------------------------------------------------------------------------------------------------------------
+ v1.Gi+aUHr40Zpic9gH.RGeNOw3Q9Ci54LcrSWZl8g==.MwGhmL9KedMLidjTN64koVlKiORbs5YVz7E9LsIR
+ v1.pnbZyhlu/iuAU78R.uFL+N5C6abTU5fVOOYGjsA==.GEbg0SqHDUVBr2NLKIRkeYzNoM6gm3S4dl2TePg7
+ v1.TOxTBh/SJuAO180s.wxwO+ExlHRDyCGiAtMxGqw==.IVX+p5Khf6EaPnK0h7s1eBv9+V0H+oea+ET22IfmvXv88M8MFCh/4rM/B+U+UqSKc50=
+(3 rows)
+

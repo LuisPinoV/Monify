@@ -14,11 +14,15 @@
     "db:seed": "nest build && node dist/semilla.js",
     "db:psql": "docker compose exec db psql",
     "db:logs": "docker compose logs -f db",
-    "prueba:humo": "node scripts/prueba-humo.js",
-    "prueba:seguridad": "node scripts/pruebas-seguridad.js",
+    "prueba:humo": "node --env-file=.env scripts/prueba-humo.js",
+    "prueba:seguridad": "node --env-file=.env scripts/pruebas-seguridad.js",
     "prueba:actividad5": "node --env-file=.env scripts/pruebas-actividad5.js",
     "prueba:actividad6": "node --env-file=.env scripts/pruebas-actividad6.js",
-    "prueba:actividad7": "node --env-file=.env scripts/pruebas-actividad7.js"
+    "prueba:actividad7": "node --env-file=.env scripts/pruebas-actividad7.js",
+    "simular:incidente": "node --env-file=.env scripts/Simulacion_Incidente.js",
+    "prueba:sanitizador-auditoria": "pnpm run compilar && node --test scripts/prueba-sanitizador-auditoria.js",
+    "prueba:e2e-auditoria": "pnpm run compilar && node --env-file=.env --test scripts/auditoria-datos-personales.e2e.js",
+    "evidencia:auditoria": "bash scripts/evidencia-auditoria.sh"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.11",

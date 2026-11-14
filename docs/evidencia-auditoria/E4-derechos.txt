@@ -1,0 +1,17 @@
+# E4: titular ejerce acceso y rectificacion
+
++ curl --request POST http://localhost:3000/derechos/solicitudes [credenciales y cuerpo omitidos]
+{"solicitud":{"id":"1","tipo":"acceso","estado":"recibida","resultado":null,"respuesta":null,"nivelVerificacion":"contrasena_y_codigo","canal":"api","recibidaEn":"2026-11-14T00:17:32.940Z","verificadaEn":null,"evaluadaEn":null,"resueltaEn":null,"cerradaEn":null,"plazoRespuesta":"2026-12-14T00:17:32.940Z","descargaDisponibleHasta":null,"codigoExpiraEn":"2026-11-14T00:27:32.940Z","evidenciaId":null,"historial":[{"estadoAnterior":null,"estadoNuevo":"recibida","fecha":"2026-11-14T00:17:32.942Z","actor":"titular","canal":"api"}]},"verificacion":{"requiere":["contrasena","codigo"],"codigoEnviadoA":"t***@prueba.dev","codigoExpiraEnMinutos":10,"codigoDesarrollo":"717478"}}
+HTTP_STATUS:201
++ curl --request POST http://localhost:3000/derechos/solicitudes [credenciales y cuerpo omitidos]
+{"solicitud":{"id":"2","tipo":"rectificacion","estado":"recibida","resultado":null,"respuesta":null,"nivelVerificacion":"contrasena","camposSolicitados":["nombre"],"canal":"api","recibidaEn":"2026-11-14T00:17:32.971Z","verificadaEn":null,"evaluadaEn":null,"resueltaEn":null,"cerradaEn":null,"plazoRespuesta":"2026-12-14T00:17:32.971Z","descargaDisponibleHasta":null,"codigoExpiraEn":null,"evidenciaId":null,"historial":[{"estadoAnterior":null,"estadoNuevo":"recibida","fecha":"2026-11-14T00:17:32.972Z","actor":"titular","canal":"api"}]},"verificacion":{"requiere":["contrasena"]}}
+HTTP_STATUS:201
++ psql "$DATABASE_URL" -X -P pager=off -c SELECT\ \"secuencia\"\,\ \"fechaAccion\"\ AS\ hora\,\ \"idUsuario\"\,\ \"accion\"\,\ \"resultado\"\,\ \"canal\"\,\ left\(\"dispositivo\"\,20\)\ AS\ dispositivo\,\ \"recurso\"\,\ left\(\"hashPrevio\"\,16\)\ AS\ hash_previo\,\ left\(\"hashRegistro\"\,16\)\ AS\ hash\ FROM\ \"UserLogs\"\ WHERE\ \"idUsuario\"\ =\ 16\ AND\ \"accion\"\ LIKE\ \'derechos.%\'\ ORDER\ BY\ \"secuencia\"\ DESC\ LIMIT\ 20\;
+ secuencia |            hora            | idUsuario |             accion              | resultado | canal |     dispositivo     |          recurso           |   hash_previo    |       hash       
+-----------+----------------------------+-----------+---------------------------------+-----------+-------+---------------------+----------------------------+------------------+------------------
+        36 | 2026-11-14 00:17:32.98+00  |        16 | derechos.ejercer                | exito     | api   | evidencia-auditoria | POST /derechos/solicitudes | ae94ac42c7f3fd8c | 3ee713bf896c3362
+        35 | 2026-11-14 00:17:32.975+00 |        16 | derechos.rectificacion.recibida | exito     | api   | evidencia-auditoria | solicitud_derecho:2        | 5d507c8e47818acf | ae94ac42c7f3fd8c
+        34 | 2026-11-14 00:17:32.957+00 |        16 | derechos.ejercer                | exito     | api   | evidencia-auditoria | POST /derechos/solicitudes | 834a3960f2c67bb4 | 5d507c8e47818acf
+        33 | 2026-11-14 00:17:32.951+00 |        16 | derechos.acceso.recibida        | exito     | api   | evidencia-auditoria | solicitud_derecho:1        | a0a2c4a3162be7f3 | 834a3960f2c67bb4
+(4 rows)
+

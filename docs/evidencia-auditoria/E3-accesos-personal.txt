@@ -1,0 +1,15 @@
+# E3: personal consulta KYC y riesgo de otro titular
+
++ curl --request GET http://localhost:3000/verificaciones-identidad\?usuarioId=16 [credenciales y cuerpo omitidos]
+[]
+HTTP_STATUS:200
++ curl --request GET http://localhost:3000/consultas-riesgo\?usuarioId=16 [credenciales y cuerpo omitidos]
+[]
+HTTP_STATUS:200
++ psql "$DATABASE_URL" -X -P pager=off -c SELECT\ \"secuencia\"\,\ \"fechaAccion\"\ AS\ hora\,\ \"idAdminRiesgo\"\,\ \"accion\"\,\ \"resultado\"\,\ \"canal\"\,\ left\(\"dispositivo\"\,20\)\ AS\ dispositivo\,\ \"recurso\"\,\ left\(\"hashPrevio\"\,16\)\ AS\ hash_previo\,\ left\(\"hashRegistro\"\,16\)\ AS\ hash\ FROM\ \"UserLogs\"\ WHERE\ \"idAdminRiesgo\"\ =\ 1\ AND\ \"accion\"\ IN\ \(\'kyc.ver\'\,\'info_financiera.ver\'\)\ ORDER\ BY\ \"secuencia\"\ DESC\ LIMIT\ 10\;
+ secuencia |            hora            | idAdminRiesgo |       accion        | resultado | canal |     dispositivo     |                 recurso                  |   hash_previo    |       hash       
+-----------+----------------------------+---------------+---------------------+-----------+-------+---------------------+------------------------------------------+------------------+------------------
+        32 | 2026-11-14 00:17:32.895+00 |             1 | info_financiera.ver | exito     | api   | evidencia-auditoria | GET /consultas-riesgo titular:16         | 1801295939c91aea | a0a2c4a3162be7f3
+        30 | 2026-11-14 00:17:32.878+00 |             1 | kyc.ver             | exito     | api   | evidencia-auditoria | GET /verificaciones-identidad titular:16 | a70073ea7753e37f | b31782fe2fe47a90
+(2 rows)
+

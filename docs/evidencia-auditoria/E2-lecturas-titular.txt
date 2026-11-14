@@ -1,0 +1,15 @@
+# E2: titular consulta perfil e historial
+
++ curl --request GET http://localhost:3000/usuarios/me [credenciales y cuerpo omitidos]
+{"id":"16","cuenta":"usuario","rol":"usuario","nombre":"Titular Ficticio","rut":"99999999-1","correo":"titular.evidencia.4898@prueba.dev","numeroCelular":"+56900000000","esMayorEdad":true,"tramoRenta":"T1","tramoRentaEtiqueta":"Hasta $500.000","bloqueada":false,"creadoEn":"2026-11-14T00:17:23.630Z"}
+HTTP_STATUS:200
++ curl --request GET http://localhost:3000/transacciones [credenciales y cuerpo omitidos]
+[]
+HTTP_STATUS:200
++ psql "$DATABASE_URL" -X -P pager=off -c SELECT\ \"secuencia\"\,\ \"fechaAccion\"\ AS\ hora\,\ \"idUsuario\"\,\ \"accion\"\,\ \"resultado\"\,\ \"canal\"\,\ left\(\"dispositivo\"\,20\)\ AS\ dispositivo\,\ \"recurso\"\,\ left\(\"hashPrevio\"\,16\)\ AS\ hash_previo\,\ left\(\"hashRegistro\"\,16\)\ AS\ hash\ FROM\ \"UserLogs\"\ WHERE\ \"idUsuario\"\ =\ 16\ AND\ \"accion\"\ IN\ \(\'perfil.ver\'\,\'historial.ver\'\)\ ORDER\ BY\ \"secuencia\"\ DESC\ LIMIT\ 10\;
+ secuencia |            hora            | idUsuario |    accion     | resultado | canal |     dispositivo     |      recurso       |   hash_previo    |       hash       
+-----------+----------------------------+-----------+---------------+-----------+-------+---------------------+--------------------+------------------+------------------
+        29 | 2026-11-14 00:17:32.834+00 |        16 | historial.ver | exito     | api   | evidencia-auditoria | GET /transacciones | a0e3eefada8a58ff | a70073ea7753e37f
+        28 | 2026-11-14 00:17:32.819+00 |        16 | perfil.ver    | exito     | api   | evidencia-auditoria | GET /usuarios/me   | b2106c9a8b8fffe9 | a0e3eefada8a58ff
+(2 rows)
+

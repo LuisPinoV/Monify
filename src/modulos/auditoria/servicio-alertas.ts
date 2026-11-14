@@ -10,18 +10,23 @@ import { ServicioAuditoria, type ActorAuditoria } from './servicio-auditoria';
  * Actividad 7, punto 4: alertas de acceso anómalo.
  *  A1  3 logins fallidos en 15 min en la misma cuenta, o 10 fallos en cuentas distintas desde el mismo dispositivo en 10 min
  *      -> bloqueo temporal y aviso al titular. La cuenta queda bloqueada 15 minutos (se levanta sola) y el dispositivo, 10 minutos.
- *  A2  Un operador o administrador de riesgo consulta más de 20 titulares distintos en 10 min -> alerta al Auditor y revisión de sesión.
+ *  A2  Un operador o administrador de riesgo consulta más de 10 titulares distintos en 1 min -> alerta y contención automática.
  *  A3  Login desde un canal o dispositivo nuevo seguido de una operación sensible en menos de 30 min -> verificación adicional
  *      (el titular debe volver a ingresar su contraseña; para el personal, alerta al Auditor).
  *  A4  5 o más accesos denegados (403) del mismo actor en 10 min -> alerta al Auditor.
  * Las reglas se calculan sobre la propia bitácora (UserLogs), así que no necesitan contadores aparte.
  */
 export const REGLAS_ALERTA = {
-  A1: { nombre: 'Fuerza bruta en el login', severidad: 'media' as const, fallosCuenta: MAXIMO_INTENTOS_FALLIDOS, minutosCuenta: MINUTOS_BLOQUEO_TEMPORAL, fallosDispositivo: 10, minutosDispositivo: 10 },
-  A2: { nombre: 'Consulta masiva de perfiles', severidad: 'alta' as const, maximoTitulares: 20, minutos: 10 },
-  A3: { nombre: 'Operación sensible desde un dispositivo nuevo', severidad: 'media' as const, minutos: 30 },
-  A4: { nombre: 'Accesos denegados repetidos', severidad: 'media' as const, minimoDenegados: 5, minutos: 10 }
+  A1: { nombre: 'Fuerza bruta en el login', severidad: 'media' as const, gravedad: 3, fallosCuenta: MAXIMO_INTENTOS_FALLIDOS, minutosCuenta: MINUTOS_BLOQUEO_TEMPORAL, fallosDispositivo: 10, minutosDispositivo: 10 },
+  A2: { nombre: 'Consulta masiva de perfiles', severidad: 'alta' as const, gravedad: 2, maximoTitulares: 10, minutos: 1 },
+  A3: { nombre: 'Operación sensible desde un dispositivo nuevo', severidad: 'media' as const, gravedad: 3, minutos: 30 },
+  A4: { nombre: 'Accesos denegados repetidos', severidad: 'media' as const, gravedad: 3, minimoDenegados: 5, minutos: 10 }
 };
+
+export const PLAN_ALERTAS = Object.fromEntries(Object.entries(REGLAS_ALERTA).map(([codigo, regla]) => [codigo, {
+  codigo, nombre: regla.nombre, severidad: regla.severidad, gravedad: regla.gravedad,
+  respuesta: codigo === 'A2' ? 'contencion_automatica' : codigo === 'A3' ? 'verificacion_adicional' : 'revision_auditor'
+}])) as Record<keyof typeof REGLAS_ALERTA, { codigo: string; nombre: string; severidad: string; gravedad: number; respuesta: string }>;
 
 export type CodigoAlerta = keyof typeof REGLAS_ALERTA;
 const ROLES_ACCESO_MASIVO = ['operador_financiero', 'administrador_riesgo'];
@@ -31,6 +36,7 @@ export interface Alerta {
   codigo: string;
   nombre: string;
   severidad: string;
+  gravedad: number;
   usuarioId: string | null;
   adminRiesgoId: string | null;
   canal: string;
@@ -199,11 +205,12 @@ export class ServicioAlertas {
       `, [sesion.id, regla.minutos]);
       const titulares = r.rows[0]?.titulares ?? 0;
       if (titulares > regla.maximoTitulares) {
-        await this.crear('A2', sesion, contexto, {
-          descripcion: `${sesion.rol === 'operador_financiero' ? 'Operador financiero' : 'Administrador de riesgo'} consultó ${titulares} titulares distintos en ${regla.minutos} minutos (máximo ${regla.maximoTitulares})`,
-          accionTomada: 'Alerta al Auditor y revisión de la sesión; el Admin puede revocar las sesiones y bloquear la cuenta (POST /admin/contencion)',
+        const alertaId = await this.crear('A2', sesion, contexto, {
+          descripcion: `${sesion.rol === 'operador_financiero' ? 'Operador financiero' : 'Administrador de riesgo'} consultó ${titulares} titulares distintos en ${regla.minutos} minuto (máximo ${regla.maximoTitulares})`,
+          accionTomada: 'Contención automática: sesiones revocadas y cuenta bloqueada; el Auditor debe revisar y cerrar la alerta',
           evidencia: { titulares, ventanaMinutos: regla.minutos }, ventanaMinutos: regla.minutos
         });
+        if (alertaId) await this.contenerAutomaticamente(sesion, alertaId, contexto);
       }
       const login = await this.loginNuevoSinVerificar(sesion);
       if (login) await this.crearA3(sesion, contexto, login, operacion, 'Alerta al Auditor: el personal accede a datos de titulares desde un dispositivo nuevo');
@@ -230,7 +237,7 @@ export class ServicioAlertas {
 
   private async crear(codigo: CodigoAlerta, actor: ActorAuditoria | null, contexto: ContextoCliente, datos: {
     descripcion: string; accionTomada: string; evidencia?: Record<string, unknown>; ventanaMinutos?: number;
-  }): Promise<void> {
+  }): Promise<number> {
     const usuarioId = actor?.cuenta === 'usuario' ? actor.id : null;
     const adminId = actor?.cuenta === 'administrador_riesgo' ? actor.id : null;
     if (datos.ventanaMinutos) {
@@ -240,7 +247,7 @@ export class ServicioAlertas {
         WHERE "codigo" = $1 AND "estado" = 'abierta' AND "creadaEn" > now() - make_interval(mins => $2)
           AND "idUsuario" IS NOT DISTINCT FROM $3 AND "idAdminRiesgo" IS NOT DISTINCT FROM $4 AND ($3::int IS NOT NULL OR $4::int IS NOT NULL OR "dispositivo" = $5)
       `, [codigo, datos.ventanaMinutos, usuarioId, adminId, contexto.dispositivo]);
-      if ((repetida.rowCount ?? 0) > 0) return;
+      if ((repetida.rowCount ?? 0) > 0) return 0;
     }
     const r = await this.baseDatos.consultar<{ id: string }>(`
       INSERT INTO "AlertaSeguridad" ("codigo", "severidad", "idUsuario", "idAdminRiesgo", "canal", "dispositivo", "descripcion", "accionTomada", "evidencia")
@@ -249,6 +256,21 @@ export class ServicioAlertas {
       datos.evidencia ? this.persistenciaCifrada.protegerCampo(datos.evidencia) : null]);
     await this.auditoria.intentarRegistrar({
       actor, accion: `alerta.${codigo}`, resultado: 'exito', contexto, recurso: `alerta:${r.rows[0].id}`, detalle: { regla: REGLAS_ALERTA[codigo].nombre }
+    });
+    return Number(r.rows[0].id);
+  }
+
+  private async contenerAutomaticamente(actor: ActorAuditoria, alertaId: number, contexto: ContextoCliente): Promise<void> {
+    const motivo = `A2: consulta masiva, alerta #${alertaId}`;
+    const columna = actor.cuenta === 'usuario' ? 'idUsuario' : 'idAdminRiesgo';
+    const tabla = actor.cuenta === 'usuario' ? 'Usuario' : 'AdministradorRiesgo';
+    await this.baseDatos.transaccion(async (tx) => {
+      await tx.consultar(`INSERT INTO "SesionRevocada" ("${columna}", "motivo", "idAlerta") VALUES ($1, $2, $3)`, [actor.id, motivo, alertaId]);
+      await tx.consultar(`UPDATE "${tabla}" SET "isAccessBlocked" = TRUE WHERE "${columna}" = $1`, [actor.id]);
+    });
+    await this.auditoria.intentarRegistrar({
+      accion: 'incidente.contencion', resultado: 'exito', contexto, recurso: `${actor.cuenta}:${actor.id}`,
+      detalle: { alertaId, bloqueada: true, automatica: true, motivo }
     });
   }
 
@@ -281,6 +303,7 @@ export class ServicioAlertas {
     const iso = (v: Date | null) => (v ? new Date(v).toISOString() : null);
     return {
       id: String(f.idAlerta), codigo: f.codigo, nombre: REGLAS_ALERTA[f.codigo as CodigoAlerta]?.nombre ?? f.codigo, severidad: f.severidad,
+      gravedad: REGLAS_ALERTA[f.codigo as CodigoAlerta]?.gravedad ?? 4,
       usuarioId: f.idUsuario === null ? null : String(f.idUsuario), adminRiesgoId: f.idAdminRiesgo === null ? null : String(f.idAdminRiesgo),
       canal: f.canal, dispositivo: f.dispositivo, descripcion: f.descripcion, accionTomada: f.accionTomada,
       evidencia: this.persistenciaCifrada.revelarCampo<Record<string, unknown>>(f.evidencia), estado: f.estado,

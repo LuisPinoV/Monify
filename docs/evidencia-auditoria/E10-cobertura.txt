@@ -1,0 +1,78 @@
+# E10: cobertura por accion y resultado
+
++ psql "$DATABASE_URL" -X -P pager=off -c SELECT\ \"accion\"\,\ \"resultado\"\,\ count\(\*\)\ FROM\ \"UserLogs\"\ GROUP\ BY\ 1\,2\ ORDER\ BY\ 1\,2\;
+             accion              | resultado | count 
+---------------------------------+-----------+-------
+ acceso_denegado                 | denegado  |     1
+ acceso.por_necesidad            | exito     |     1
+ alerta.A1                       | exito     |     1
+ alerta.aviso_titular            | exito     |     1
+ auth.cuenta_bloqueada           | exito     |     1
+ auth.login                      | exito     |     5
+ auth.login                      | fallo     |     3
+ consentimiento.gestionar        | exito     |     4
+ cuenta.registrar                | exito     |    14
+ derechos.acceso.recibida        | exito     |     1
+ derechos.ejercer                | exito     |     2
+ derechos.rectificacion.recibida | exito     |     1
+ historial.ver                   | exito     |     1
+ info_financiera.ver             | exito     |     1
+ kyc.ver                         | exito     |     1
+ logs.revisar                    | denegado  |     1
+ logs.revisar                    | exito     |     2
+ perfil.ver                      | exito     |     1
+ semilla.desarrollo              | exito     |     1
+ tarjeta.agregar                 | exito     |     1
+ transaccion.crear               | exito     |     1
+(21 rows)
+
++ psql "$DATABASE_URL" -X -P pager=off -c SELECT\ \"secuencia\"\,\ \"fechaAccion\"\ AS\ hora\,\ COALESCE\(\"idUsuario\"::text\,\"idAdminRiesgo\"::text\)\ AS\ actor\,\ \"accion\"\,\ \"resultado\"\,\ \"canal\"\,\ left\(\"dispositivo\"\,20\)\ AS\ dispositivo\,\ \"recurso\"\,\ left\(\"hashPrevio\"\,16\)\ AS\ hash_previo\,\ left\(\"hashRegistro\"\,16\)\ AS\ hash\ FROM\ \"UserLogs\"\ ORDER\ BY\ \"secuencia\"\ DESC\ LIMIT\ 50\;
+ secuencia |            hora            | actor |             accion              | resultado | canal |     dispositivo     |                       recurso                       |   hash_previo    |       hash       
+-----------+----------------------------+-------+---------------------------------+-----------+-------+---------------------+-----------------------------------------------------+------------------+------------------
+        45 | 2026-11-14 00:17:33.321+00 | 2     | logs.revisar                    | exito     | api   | evidencia-auditoria | GET /auditoria/integridad                           | a92b4cdfd6c23e1e | c81c3c989175aee6
+        44 | 2026-11-14 00:17:33.209+00 | 2     | logs.revisar                    | exito     | api   | evidencia-auditoria | GET /auditoria/logs                                 | d32d4e3152770c77 | a92b4cdfd6c23e1e
+        43 | 2026-11-14 00:17:33.193+00 | 1     | logs.revisar                    | denegado  | api   | evidencia-auditoria | GET /auditoria/logs                                 | 37d507f106b85789 | d32d4e3152770c77
+        42 | 2026-11-14 00:17:33.18+00  | 16    | acceso_denegado                 | denegado  | api   | evidencia-auditoria | GET /auditoria/logs                                 | e509007060915ba5 | 37d507f106b85789
+        41 | 2026-11-14 00:17:33.135+00 | 16    | transaccion.crear               | exito     | api   | evidencia-auditoria | POST /transacciones                                 | 080508872693b630 | e509007060915ba5
+        40 | 2026-11-14 00:17:33.084+00 | 16    | consentimiento.gestionar        | exito     | api   | evidencia-auditoria | POST /consentimientos/otorgar                       | 9aaa9369eb28d6d0 | 080508872693b630
+        39 | 2026-11-14 00:17:33.067+00 | 16    | consentimiento.gestionar        | exito     | api   | evidencia-auditoria | POST /consentimientos/evaluacion_crediticia/revocar | 2c1e831c77884ac5 | 9aaa9369eb28d6d0
+        38 | 2026-11-14 00:17:33.049+00 | 16    | consentimiento.gestionar        | exito     | api   | evidencia-auditoria | POST /consentimientos/otorgar                       | ada1f33d1bfd29b8 | 2c1e831c77884ac5
+        37 | 2026-11-14 00:17:33.031+00 | 16    | consentimiento.gestionar        | exito     | api   | evidencia-auditoria | POST /consentimientos/evaluacion_crediticia/revocar | 3ee713bf896c3362 | ada1f33d1bfd29b8
+        36 | 2026-11-14 00:17:32.98+00  | 16    | derechos.ejercer                | exito     | api   | evidencia-auditoria | POST /derechos/solicitudes                          | ae94ac42c7f3fd8c | 3ee713bf896c3362
+        35 | 2026-11-14 00:17:32.975+00 | 16    | derechos.rectificacion.recibida | exito     | api   | evidencia-auditoria | solicitud_derecho:2                                 | 5d507c8e47818acf | ae94ac42c7f3fd8c
+        34 | 2026-11-14 00:17:32.957+00 | 16    | derechos.ejercer                | exito     | api   | evidencia-auditoria | POST /derechos/solicitudes                          | 834a3960f2c67bb4 | 5d507c8e47818acf
+        33 | 2026-11-14 00:17:32.951+00 | 16    | derechos.acceso.recibida        | exito     | api   | evidencia-auditoria | solicitud_derecho:1                                 | a0a2c4a3162be7f3 | 834a3960f2c67bb4
+        32 | 2026-11-14 00:17:32.895+00 | 1     | info_financiera.ver             | exito     | api   | evidencia-auditoria | GET /consultas-riesgo titular:16                    | 1801295939c91aea | a0a2c4a3162be7f3
+        31 | 2026-11-14 00:17:32.89+00  | 1     | acceso.por_necesidad            | exito     | api   | evidencia-auditoria | info_financiera.ver                                 | b31782fe2fe47a90 | 1801295939c91aea
+        30 | 2026-11-14 00:17:32.878+00 | 1     | kyc.ver                         | exito     | api   | evidencia-auditoria | GET /verificaciones-identidad titular:16            | a70073ea7753e37f | b31782fe2fe47a90
+        29 | 2026-11-14 00:17:32.834+00 | 16    | historial.ver                   | exito     | api   | evidencia-auditoria | GET /transacciones                                  | a0e3eefada8a58ff | a70073ea7753e37f
+        28 | 2026-11-14 00:17:32.819+00 | 16    | perfil.ver                      | exito     | api   | evidencia-auditoria | GET /usuarios/me                                    | b2106c9a8b8fffe9 | a0e3eefada8a58ff
+        27 | 2026-11-14 00:17:32.769+00 | 17    | alerta.aviso_titular            | exito     | api   | evidencia-auditoria |                                                     | 26918d88bef6ea93 | b2106c9a8b8fffe9
+        26 | 2026-11-14 00:17:32.766+00 | 17    | alerta.A1                       | exito     | api   | evidencia-auditoria | alerta:1                                            | 7e9913eda4bdc70c | 26918d88bef6ea93
+        25 | 2026-11-14 00:17:32.757+00 | 17    | auth.cuenta_bloqueada           | exito     | api   | evidencia-auditoria |                                                     | 766d92406f181480 | 7e9913eda4bdc70c
+        24 | 2026-11-14 00:17:32.752+00 | 17    | auth.login                      | fallo     | api   | evidencia-auditoria |                                                     | de710df5696fe7a4 | 766d92406f181480
+        23 | 2026-11-14 00:17:32.544+00 | 17    | auth.login                      | fallo     | api   | evidencia-auditoria |                                                     | b346e5222d97b0c4 | de710df5696fe7a4
+        22 | 2026-11-14 00:17:32.337+00 | 17    | auth.login                      | fallo     | api   | evidencia-auditoria |                                                     | e5b670794bbe3210 | b346e5222d97b0c4
+        21 | 2026-11-14 00:17:32.129+00 | 17    | auth.login                      | exito     | api   | evidencia-auditoria |                                                     | 4fd9d749a9d52a73 | e5b670794bbe3210
+        20 | 2026-11-14 00:17:24.309+00 | 16    | tarjeta.agregar                 | exito     | api   | evidencia-auditoria | POST /tarjetas                                      | 2ead0d6d45a98646 | 4fd9d749a9d52a73
+        19 | 2026-11-14 00:17:24.284+00 | 17    | cuenta.registrar                | exito     | api   | evidencia-auditoria |                                                     | 2d6c5daa98be2720 | 2ead0d6d45a98646
+        18 | 2026-11-14 00:17:24.046+00 | 16    | auth.login                      | exito     | api   | evidencia-auditoria |                                                     | 9010c9ec698a2e67 | 2d6c5daa98be2720
+        17 | 2026-11-14 00:17:23.833+00 | 16    | cuenta.registrar                | exito     | api   | evidencia-auditoria |                                                     | 919c203cd75a351b | 9010c9ec698a2e67
+        16 | 2026-11-14 00:17:23.573+00 | 1     | auth.login                      | exito     | api   | evidencia-auditoria |                                                     | c70e3ad7e8e0f539 | 919c203cd75a351b
+        15 | 2026-11-14 00:17:23.368+00 | 2     | auth.login                      | exito     | api   | evidencia-auditoria |                                                     | cdc200af8129b606 | c70e3ad7e8e0f539
+        14 | 2026-11-14 00:17:23.165+00 | 1     | auth.login                      | exito     | api   | evidencia-auditoria |                                                     | 0c797d18fededb9f | cdc200af8129b606
+        13 | 2026-11-14 00:14:26.257+00 |       | semilla.desarrollo              | exito     | api   | semilla-desarrollo  |                                                     | 9d2d976343da4790 | 0c797d18fededb9f
+        12 | 2026-11-14 00:14:26.036+00 | 15    | cuenta.registrar                | exito     | api   | semilla-desarrollo  |                                                     | 338bf54f761837ba | 9d2d976343da4790
+        11 | 2026-11-14 00:14:25.615+00 | 14    | cuenta.registrar                | exito     | api   | semilla-desarrollo  |                                                     | 880a0bfc04ff3e38 | 338bf54f761837ba
+        10 | 2026-11-14 00:14:25.179+00 | 13    | cuenta.registrar                | exito     | api   | semilla-desarrollo  |                                                     | 1a438fc9d3cdc442 | 880a0bfc04ff3e38
+         9 | 2026-11-14 00:14:24.744+00 | 12    | cuenta.registrar                | exito     | api   | semilla-desarrollo  |                                                     | 413b01ed5ccbc94a | 1a438fc9d3cdc442
+         8 | 2026-11-14 00:14:24.313+00 | 11    | cuenta.registrar                | exito     | api   | semilla-desarrollo  |                                                     | 4b193ca8eea56652 | 413b01ed5ccbc94a
+         7 | 2026-11-14 00:14:23.857+00 | 10    | cuenta.registrar                | exito     | api   | semilla-desarrollo  |                                                     | a35fd279e371c11a | 4b193ca8eea56652
+         6 | 2026-11-14 00:14:23.427+00 | 9     | cuenta.registrar                | exito     | api   | semilla-desarrollo  |                                                     | 947694a9df5719f4 | a35fd279e371c11a
+         5 | 2026-11-14 00:14:23.006+00 | 8     | cuenta.registrar                | exito     | api   | semilla-desarrollo  |                                                     | bb3c9aa49c6550e9 | 947694a9df5719f4
+         4 | 2026-11-14 00:14:22.57+00  | 7     | cuenta.registrar                | exito     | api   | semilla-desarrollo  |                                                     | e7d8f46f8433bdd3 | bb3c9aa49c6550e9
+         3 | 2026-11-14 00:14:22.135+00 | 6     | cuenta.registrar                | exito     | api   | semilla-desarrollo  |                                                     | be46e30cdae9a6d3 | e7d8f46f8433bdd3
+         2 | 2026-11-14 00:14:21.7+00   | 5     | cuenta.registrar                | exito     | api   | semilla-desarrollo  |                                                     | 933d3d4e56f47970 | be46e30cdae9a6d3
+         1 | 2026-11-14 00:14:21.241+00 | 4     | cuenta.registrar                | exito     | api   | semilla-desarrollo  |                                                     | 0000000000000000 | 933d3d4e56f47970
+(45 rows)
+

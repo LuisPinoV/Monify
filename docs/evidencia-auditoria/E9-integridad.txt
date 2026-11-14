@@ -1,0 +1,21 @@
+# E9: integridad y triggers de UserLogs
+
++ curl --request GET http://localhost:3000/auditoria/integridad [credenciales y cuerpo omitidos]
+{"valida":true,"registrosVerificados":44}
+HTTP_STATUS:200
++ UPDATE UserLogs (debe fallar)
+ERROR:  La tabla UserLogs es de solo anexado (auditoría y no repudio): no admite UPDATE ni DELETE
+CONTEXT:  PL/pgSQL function fn_registro_inmutable() line 7 at RAISE
++ DELETE UserLogs (debe fallar)
+ERROR:  La tabla UserLogs es de solo anexado (auditoría y no repudio): no admite UPDATE ni DELETE
+CONTEXT:  PL/pgSQL function fn_registro_inmutable() line 7 at RAISE
++ psql "$DATABASE_URL" -X -P pager=off -c SELECT\ \"secuencia\"\,\ left\(\"hashPrevio\"\,16\)\ AS\ hash_previo\,\ left\(\"hashRegistro\"\,16\)\ AS\ hash\ FROM\ \"UserLogs\"\ ORDER\ BY\ \"secuencia\"\ DESC\ LIMIT\ 5\;
+ secuencia |   hash_previo    |       hash       
+-----------+------------------+------------------
+        45 | a92b4cdfd6c23e1e | c81c3c989175aee6
+        44 | d32d4e3152770c77 | a92b4cdfd6c23e1e
+        43 | 37d507f106b85789 | d32d4e3152770c77
+        42 | e509007060915ba5 | 37d507f106b85789
+        41 | 080508872693b630 | e509007060915ba5
+(5 rows)
+

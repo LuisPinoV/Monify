@@ -165,7 +165,7 @@ export class ServicioAuditoria {
   // Actividad 7, punto 6: línea de tiempo de un actor y un rango, en orden cronológico, para reconstruir un incidente.
   // Se entrega con una huella SHA-256 y una firma RSA (cadena de custodia) y el estado de la cadena de hashes.
   async lineaTiempo(filtros: { usuarioId?: number; adminRiesgoId?: number; desde?: Date; hasta?: Date }, exportadoPor: string) {
-    const registros = (await this.listar({ ...filtros, limite: 500 })).reverse();
+    const registros = (await this.listarIncidente(filtros)).reverse();
     const integridad = await this.verificarIntegridad();
     const eventos = registros.map(({ id, secuencia, usuarioId, adminRiesgoId, fechaAccion, accion, resultado, canal, dispositivo, recurso, detalle }) => ({
       id, secuencia, usuarioId, adminRiesgoId, fechaAccion, accion, resultado, canal, dispositivo, recurso,
@@ -188,6 +188,22 @@ export class ServicioAuditoria {
         bitacoraIntegra: integridad.valida, registrosVerificados: integridad.registrosVerificados
       }
     };
+  }
+
+  private async listarIncidente(filtros: { usuarioId?: number; adminRiesgoId?: number; desde?: Date; hasta?: Date }): Promise<RegistroAuditoria[]> {
+    if (filtros.usuarioId === undefined || filtros.adminRiesgoId === undefined) return this.listar({ ...filtros, limite: 500 });
+    const resultado = await this.baseDatos.consultar<FilaLog>(`
+      SELECT * FROM "UserLogs"
+      WHERE ("idUsuario" = $1 OR "idAdminRiesgo" = $2 OR "recurso" IN ($5, $6))
+        AND "fechaAccion" >= $3 AND "fechaAccion" <= $4
+      ORDER BY "secuencia" DESC LIMIT 500
+    `, [filtros.usuarioId, filtros.adminRiesgoId, filtros.desde, filtros.hasta, `usuario:${filtros.usuarioId}`, `administrador_riesgo:${filtros.usuarioId}`]);
+    return resultado.rows.map((fila) => ({
+      id: fila.uniqueID, secuencia: String(fila.secuencia), usuarioId: fila.idUsuario === null ? null : String(fila.idUsuario),
+      adminRiesgoId: fila.idAdminRiesgo === null ? null : String(fila.idAdminRiesgo), fechaAccion: new Date(fila.fechaAccion).toISOString(),
+      sistema: fila.sistema, accion: fila.accion, canal: fila.canal, dispositivo: fila.dispositivo, resultado: fila.resultado,
+      recurso: fila.recurso, detalle: this.persistenciaCifrada.revelarCampo<Record<string, unknown>>(fila.detalle)
+    }));
   }
 
   // Actividad 7, punto 3: borra lo que superó el plazo de conservación (5 años, Ley 19.913 art. 5) mediante la función controlada de la base.

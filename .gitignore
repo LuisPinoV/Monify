@@ -4,5 +4,6 @@ dist/
 .env.*
 !.env.example
 *.log
+*.pem
 *.sql
 !db/**/*.sql

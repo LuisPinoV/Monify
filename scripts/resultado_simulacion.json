@@ -1,0 +1,2116 @@
+{
+  "incidente": "Consulta masiva de perfiles por operador",
+  "iniciadoEn": "2026-11-14T01:25:10.858Z",
+  "baseUrl": "http://localhost:3000",
+  "dispositivo": "simulacion-incidente-1794619510857",
+  "pasos": [
+    {
+      "nombre": "1. Operador inicia sesion desde dispositivo nuevo",
+      "esperado": 200,
+      "estado": 200,
+      "datos": {
+        "usuarioId": 3,
+        "dispositivo": "simulacion-incidente-1794619510857"
+      }
+    },
+    {
+      "nombre": "2. A3 bloquea el primer acceso desde dispositivo nuevo",
+      "esperado": 403,
+      "estado": 403,
+      "datos": {
+        "statusCode": 403,
+        "error": "Forbidden",
+        "codigo": "VERIFICACION_ADICIONAL_REQUERIDA",
+        "message": "iniciaste sesión desde un dispositivo nuevo: confirma tu contraseña para realizar esta operación"
+      }
+    },
+    {
+      "nombre": "3. Operador completa verificacion adicional",
+      "esperado": 200,
+      "estado": 200,
+      "datos": {
+        "verificado": true,
+        "mensaje": "Identidad confirmada: ya puedes realizar operaciones sensibles en esta sesión."
+      }
+    },
+    {
+      "nombre": "4. A2 contiene al superar 10 titulares en 1 minuto",
+      "esperado": {
+        "exitosas": 11,
+        "denegadas": 5,
+        "revocadas": 9
+      },
+      "estado": 200,
+      "datos": {
+        "consultas": 25,
+        "titularesExpuestos": 11,
+        "exitosas": 11,
+        "denegadas": 5,
+        "revocadas": 9
+      }
+    },
+    {
+      "nombre": "5. Sistema registra las consultas en UserLogs",
+      "esperado": 200,
+      "estado": 200,
+      "datos": [
+        {
+          "id": "18bbb9fa-9879-4b78-aebc-a2e84a2d488b",
+          "secuencia": "531",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.421Z",
+          "sistema": "monify-api",
+          "accion": "alerta.A2",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "alerta:19",
+          "detalle": {
+            "regla": "Consulta masiva de perfiles"
+          }
+        },
+        {
+          "id": "64813897-ed6b-491b-9bd5-ba917f2753a6",
+          "secuencia": "530",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.415Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:153",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "dd6d8f22-eda3-44a0-922b-1e70fd368590",
+          "secuencia": "529",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.411Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "46da5810-5ba4-4492-a6cf-d42c36456664",
+          "secuencia": "528",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.404Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:152",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "8d6f9872-cd17-4626-a3d8-a36e40fabb68",
+          "secuencia": "527",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.400Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "a10d578b-b7bc-4457-a071-10b786e53ac3",
+          "secuencia": "526",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.393Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:151",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "bc1c3c22-0b8f-4efd-be0d-92123eb369ba",
+          "secuencia": "525",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.389Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "6d0a7992-46f8-4a82-a6bc-f757b8111de4",
+          "secuencia": "524",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.381Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:150",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "1afdabc5-e37d-4ef7-9591-ee35c47e22e0",
+          "secuencia": "523",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.377Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "8a291437-2766-4089-9110-66329d1db6f4",
+          "secuencia": "522",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.369Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:149",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "16f63e21-2013-41e5-8501-a903a13de494",
+          "secuencia": "521",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.365Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "32814a71-1bf0-482a-abbb-c057f450aad5",
+          "secuencia": "520",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.357Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:148",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "3b334799-9cc8-4cae-b4f3-f5ed935486ad",
+          "secuencia": "519",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.352Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "8dd5a474-5372-475d-b383-3f6af6f5c027",
+          "secuencia": "518",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.337Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:147",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "5e90ad42-e9d6-40ee-bb1c-36b275479328",
+          "secuencia": "517",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.332Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "ddd9948e-0c63-463c-adeb-bed9d27a4244",
+          "secuencia": "516",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.320Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:146",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "f35fc324-f7d6-4dc7-bbc6-1ff7e10cbfa1",
+          "secuencia": "515",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.315Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "e8d45aee-3ccb-43c6-af28-91fa8f01e9c0",
+          "secuencia": "514",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.303Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:145",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "5222595e-01f9-4ad9-a065-6b52f8abe37f",
+          "secuencia": "513",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.298Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "ca58fc62-8c3b-4938-827a-82a598d5fc03",
+          "secuencia": "512",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.287Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:144",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "44286569-19ce-48e8-924e-9bde1424ec87",
+          "secuencia": "511",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.279Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "c657cff8-3eb7-48f9-99ad-4e81648c7bef",
+          "secuencia": "510",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.272Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:143",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "dd1fd0bd-0a69-4c8a-8144-4a6617138264",
+          "secuencia": "509",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.269Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "f3a7832b-18f0-45da-94a4-70bfa3851f1c",
+          "secuencia": "508",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.260Z",
+          "sistema": "monify-api",
+          "accion": "info_financiera.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "denegado",
+          "recurso": "GET /informacion-financiera titular:143",
+          "detalle": {
+            "estado": 403,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "bba37ba2-73e2-4b0b-926a-619a9fa3d258",
+          "secuencia": "507",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.253Z",
+          "sistema": "monify-api",
+          "accion": "alerta.A4",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "alerta:18",
+          "detalle": {
+            "regla": "Accesos denegados repetidos"
+          }
+        },
+        {
+          "id": "d7e45aae-c333-42b9-9563-737d6c625465",
+          "secuencia": "506",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.245Z",
+          "sistema": "monify-api",
+          "accion": "info_financiera.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "denegado",
+          "recurso": "GET /informacion-financiera titular:143",
+          "detalle": {
+            "estado": 403,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "8791fda3-241d-4cfd-86c5-e10cea0e5714",
+          "secuencia": "505",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.237Z",
+          "sistema": "monify-api",
+          "accion": "info_financiera.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "denegado",
+          "recurso": "GET /informacion-financiera titular:143",
+          "detalle": {
+            "estado": 403,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "e565d9ba-6e76-46ef-9e3a-5c9ee3f38a5c",
+          "secuencia": "504",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.228Z",
+          "sistema": "monify-api",
+          "accion": "info_financiera.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "denegado",
+          "recurso": "GET /informacion-financiera titular:143",
+          "detalle": {
+            "estado": 403,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "b431955b-e921-45f4-87be-0e73f5e436f8",
+          "secuencia": "503",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.220Z",
+          "sistema": "monify-api",
+          "accion": "info_financiera.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "denegado",
+          "recurso": "GET /informacion-financiera titular:143",
+          "detalle": {
+            "estado": 403,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "25fe07aa-b309-45b5-8b6b-acf5921a3dd2",
+          "secuencia": "502",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.204Z",
+          "sistema": "monify-api",
+          "accion": "auth.verificacion_adicional",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "POST /auth/verificacion-adicional",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "8c16bb75-9dca-4964-a467-4148f2d04eba",
+          "secuencia": "501",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.014Z",
+          "sistema": "monify-api",
+          "accion": "acceso_denegado",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "denegado",
+          "recurso": "GET /transacciones",
+          "detalle": {
+            "motivo": "verificacion_adicional",
+            "accionRequerida": "historial.ver"
+          }
+        },
+        {
+          "id": "a74a17f9-04eb-4e79-9174-2686a79a59a5",
+          "secuencia": "500",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.011Z",
+          "sistema": "monify-api",
+          "accion": "alerta.A3",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "alerta:17",
+          "detalle": {
+            "regla": "Operación sensible desde un dispositivo nuevo"
+          }
+        },
+        {
+          "id": "d4d80528-a11f-48fd-a607-624d7a7ad491",
+          "secuencia": "474",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:11.479Z",
+          "sistema": "monify-api",
+          "accion": "auth.login",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": null,
+          "detalle": {
+            "metodo": "contrasena"
+          }
+        },
+        {
+          "id": "48a08765-0885-4a17-bf5e-adfb5386c8e8",
+          "secuencia": "473",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:11.282Z",
+          "sistema": "monify-api",
+          "accion": "auth.login",
+          "canal": "api",
+          "dispositivo": "pc-oficina-operador",
+          "resultado": "exito",
+          "recurso": null,
+          "detalle": {
+            "metodo": "contrasena"
+          }
+        }
+      ]
+    },
+    {
+      "nombre": "6. Alertas de acceso anomalo",
+      "esperado": [
+        "A2",
+        "A3",
+        "A4"
+      ],
+      "estado": 200,
+      "datos": [
+        {
+          "id": "19",
+          "codigo": "A2",
+          "nombre": "Consulta masiva de perfiles",
+          "severidad": "alta",
+          "gravedad": 2,
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "descripcion": "Operador financiero consultó 11 titulares distintos en 1 minuto (máximo 10)",
+          "accionTomada": "Contención automática: sesiones revocadas y cuenta bloqueada; el Auditor debe revisar y cerrar la alerta",
+          "evidencia": {
+            "titulares": 11,
+            "ventanaMinutos": 1
+          },
+          "estado": "abierta",
+          "creadaEn": "2026-11-14T01:25:17.419Z",
+          "revisadaEn": null,
+          "revisadaPor": null,
+          "notaRevision": null
+        },
+        {
+          "id": "18",
+          "codigo": "A4",
+          "nombre": "Accesos denegados repetidos",
+          "severidad": "media",
+          "gravedad": 3,
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "descripcion": "5 accesos denegados (403) del mismo actor en 10 minutos (umbral 5)",
+          "accionTomada": "Alerta al Auditor para revisar si el actor intenta acceder a datos o funciones que su rol no permite",
+          "evidencia": {
+            "denegados": 5,
+            "ventanaMinutos": 10
+          },
+          "estado": "abierta",
+          "creadaEn": "2026-11-14T01:25:17.251Z",
+          "revisadaEn": null,
+          "revisadaPor": null,
+          "notaRevision": null
+        },
+        {
+          "id": "17",
+          "codigo": "A3",
+          "nombre": "Operación sensible desde un dispositivo nuevo",
+          "severidad": "media",
+          "gravedad": 3,
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "descripcion": "Login desde un canal o dispositivo nuevo (api / simulacion-incidente-1794619510857) seguido de una operación sensible (historial.ver) a los 0 minutos",
+          "accionTomada": "Operación detenida hasta que el titular vuelva a ingresar su contraseña (POST /auth/verificacion-adicional)",
+          "evidencia": {
+            "loginSecuencia": "474",
+            "operacion": "historial.ver"
+          },
+          "estado": "abierta",
+          "creadaEn": "2026-11-14T01:25:17.006Z",
+          "revisadaEn": null,
+          "revisadaPor": null,
+          "notaRevision": null
+        }
+      ]
+    },
+    {
+      "nombre": "7. Contencion automatica invalida el token",
+      "esperado": 401,
+      "estado": 401,
+      "datos": {
+        "message": "la cuenta no está activa o fue bloqueada",
+        "error": "Unauthorized",
+        "statusCode": 401
+      }
+    },
+    {
+      "nombre": "8. El login posterior queda rechazado",
+      "esperado": 403,
+      "estado": 403,
+      "datos": {
+        "message": "la cuenta está bloqueada; solicita su habilitación a un administrador",
+        "error": "Forbidden",
+        "statusCode": 403
+      }
+    },
+    {
+      "nombre": "9. Auditor filtra logs por actor y rango",
+      "esperado": 200,
+      "estado": 200,
+      "datos": [
+        {
+          "id": "db511869-d40c-4df4-b60f-433f50beb6d9",
+          "secuencia": "535",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.649Z",
+          "sistema": "monify-api",
+          "accion": "auth.login",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "denegado",
+          "recurso": null,
+          "detalle": {
+            "motivo": "cuenta_bloqueada"
+          }
+        },
+        {
+          "id": "18bbb9fa-9879-4b78-aebc-a2e84a2d488b",
+          "secuencia": "531",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.421Z",
+          "sistema": "monify-api",
+          "accion": "alerta.A2",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "alerta:19",
+          "detalle": {
+            "regla": "Consulta masiva de perfiles"
+          }
+        },
+        {
+          "id": "64813897-ed6b-491b-9bd5-ba917f2753a6",
+          "secuencia": "530",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.415Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:153",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "dd6d8f22-eda3-44a0-922b-1e70fd368590",
+          "secuencia": "529",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.411Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "46da5810-5ba4-4492-a6cf-d42c36456664",
+          "secuencia": "528",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.404Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:152",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "8d6f9872-cd17-4626-a3d8-a36e40fabb68",
+          "secuencia": "527",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.400Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "a10d578b-b7bc-4457-a071-10b786e53ac3",
+          "secuencia": "526",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.393Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:151",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "bc1c3c22-0b8f-4efd-be0d-92123eb369ba",
+          "secuencia": "525",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.389Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "6d0a7992-46f8-4a82-a6bc-f757b8111de4",
+          "secuencia": "524",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.381Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:150",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "1afdabc5-e37d-4ef7-9591-ee35c47e22e0",
+          "secuencia": "523",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.377Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "8a291437-2766-4089-9110-66329d1db6f4",
+          "secuencia": "522",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.369Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:149",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "16f63e21-2013-41e5-8501-a903a13de494",
+          "secuencia": "521",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.365Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "32814a71-1bf0-482a-abbb-c057f450aad5",
+          "secuencia": "520",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.357Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:148",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "3b334799-9cc8-4cae-b4f3-f5ed935486ad",
+          "secuencia": "519",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.352Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "8dd5a474-5372-475d-b383-3f6af6f5c027",
+          "secuencia": "518",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.337Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:147",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "5e90ad42-e9d6-40ee-bb1c-36b275479328",
+          "secuencia": "517",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.332Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "ddd9948e-0c63-463c-adeb-bed9d27a4244",
+          "secuencia": "516",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.320Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:146",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "f35fc324-f7d6-4dc7-bbc6-1ff7e10cbfa1",
+          "secuencia": "515",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.315Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "e8d45aee-3ccb-43c6-af28-91fa8f01e9c0",
+          "secuencia": "514",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.303Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:145",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "5222595e-01f9-4ad9-a065-6b52f8abe37f",
+          "secuencia": "513",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.298Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "ca58fc62-8c3b-4938-827a-82a598d5fc03",
+          "secuencia": "512",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.287Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:144",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "44286569-19ce-48e8-924e-9bde1424ec87",
+          "secuencia": "511",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.279Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "c657cff8-3eb7-48f9-99ad-4e81648c7bef",
+          "secuencia": "510",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.272Z",
+          "sistema": "monify-api",
+          "accion": "historial.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "GET /transacciones titular:143",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "dd1fd0bd-0a69-4c8a-8144-4a6617138264",
+          "secuencia": "509",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.269Z",
+          "sistema": "monify-api",
+          "accion": "acceso.por_necesidad",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "historial.ver",
+          "detalle": {
+            "accionSolicitada": "historial.ver",
+            "motivo": "Simulacion de incidente autorizada"
+          }
+        },
+        {
+          "id": "f3a7832b-18f0-45da-94a4-70bfa3851f1c",
+          "secuencia": "508",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.260Z",
+          "sistema": "monify-api",
+          "accion": "info_financiera.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "denegado",
+          "recurso": "GET /informacion-financiera titular:143",
+          "detalle": {
+            "estado": 403,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "bba37ba2-73e2-4b0b-926a-619a9fa3d258",
+          "secuencia": "507",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.253Z",
+          "sistema": "monify-api",
+          "accion": "alerta.A4",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "alerta:18",
+          "detalle": {
+            "regla": "Accesos denegados repetidos"
+          }
+        },
+        {
+          "id": "d7e45aae-c333-42b9-9563-737d6c625465",
+          "secuencia": "506",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.245Z",
+          "sistema": "monify-api",
+          "accion": "info_financiera.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "denegado",
+          "recurso": "GET /informacion-financiera titular:143",
+          "detalle": {
+            "estado": 403,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "8791fda3-241d-4cfd-86c5-e10cea0e5714",
+          "secuencia": "505",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.237Z",
+          "sistema": "monify-api",
+          "accion": "info_financiera.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "denegado",
+          "recurso": "GET /informacion-financiera titular:143",
+          "detalle": {
+            "estado": 403,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "e565d9ba-6e76-46ef-9e3a-5c9ee3f38a5c",
+          "secuencia": "504",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.228Z",
+          "sistema": "monify-api",
+          "accion": "info_financiera.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "denegado",
+          "recurso": "GET /informacion-financiera titular:143",
+          "detalle": {
+            "estado": 403,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "b431955b-e921-45f4-87be-0e73f5e436f8",
+          "secuencia": "503",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.220Z",
+          "sistema": "monify-api",
+          "accion": "info_financiera.ver",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "denegado",
+          "recurso": "GET /informacion-financiera titular:143",
+          "detalle": {
+            "estado": 403,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "25fe07aa-b309-45b5-8b6b-acf5921a3dd2",
+          "secuencia": "502",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.204Z",
+          "sistema": "monify-api",
+          "accion": "auth.verificacion_adicional",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "POST /auth/verificacion-adicional",
+          "detalle": {
+            "estado": 200,
+            "parametros": {}
+          }
+        },
+        {
+          "id": "8c16bb75-9dca-4964-a467-4148f2d04eba",
+          "secuencia": "501",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.014Z",
+          "sistema": "monify-api",
+          "accion": "acceso_denegado",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "denegado",
+          "recurso": "GET /transacciones",
+          "detalle": {
+            "motivo": "verificacion_adicional",
+            "accionRequerida": "historial.ver"
+          }
+        },
+        {
+          "id": "a74a17f9-04eb-4e79-9174-2686a79a59a5",
+          "secuencia": "500",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:17.011Z",
+          "sistema": "monify-api",
+          "accion": "alerta.A3",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": "alerta:17",
+          "detalle": {
+            "regla": "Operación sensible desde un dispositivo nuevo"
+          }
+        },
+        {
+          "id": "d4d80528-a11f-48fd-a607-624d7a7ad491",
+          "secuencia": "474",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:11.479Z",
+          "sistema": "monify-api",
+          "accion": "auth.login",
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "resultado": "exito",
+          "recurso": null,
+          "detalle": {
+            "metodo": "contrasena"
+          }
+        },
+        {
+          "id": "48a08765-0885-4a17-bf5e-adfb5386c8e8",
+          "secuencia": "473",
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "fechaAccion": "2026-11-14T01:25:11.282Z",
+          "sistema": "monify-api",
+          "accion": "auth.login",
+          "canal": "api",
+          "dispositivo": "pc-oficina-operador",
+          "resultado": "exito",
+          "recurso": null,
+          "detalle": {
+            "metodo": "contrasena"
+          }
+        }
+      ]
+    },
+    {
+      "nombre": "10. Exportacion con SHA-256 y firma RSA",
+      "esperado": 200,
+      "estado": 200
+    },
+    {
+      "nombre": "11. Auditor revisa y cierra A2, A3 y A4",
+      "esperado": 200,
+      "estado": 200,
+      "datos": [
+        {
+          "id": "19",
+          "codigo": "A2",
+          "nombre": "Consulta masiva de perfiles",
+          "severidad": "alta",
+          "gravedad": 2,
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "descripcion": "Operador financiero consultó 11 titulares distintos en 1 minuto (máximo 10)",
+          "accionTomada": "Contención automática: sesiones revocadas y cuenta bloqueada; el Auditor debe revisar y cerrar la alerta",
+          "evidencia": {
+            "titulares": 11,
+            "ventanaMinutos": 1
+          },
+          "estado": "cerrada",
+          "creadaEn": "2026-11-14T01:25:17.419Z",
+          "revisadaEn": "2026-11-14T01:25:17.704Z",
+          "revisadaPor": "auditor:2",
+          "notaRevision": "Incidente documentado; sin inferir intencion del actor."
+        },
+        {
+          "id": "18",
+          "codigo": "A4",
+          "nombre": "Accesos denegados repetidos",
+          "severidad": "media",
+          "gravedad": 3,
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "descripcion": "5 accesos denegados (403) del mismo actor en 10 minutos (umbral 5)",
+          "accionTomada": "Alerta al Auditor para revisar si el actor intenta acceder a datos o funciones que su rol no permite",
+          "evidencia": {
+            "denegados": 5,
+            "ventanaMinutos": 10
+          },
+          "estado": "cerrada",
+          "creadaEn": "2026-11-14T01:25:17.251Z",
+          "revisadaEn": "2026-11-14T01:25:17.723Z",
+          "revisadaPor": "auditor:2",
+          "notaRevision": "Incidente documentado; sin inferir intencion del actor."
+        },
+        {
+          "id": "17",
+          "codigo": "A3",
+          "nombre": "Operación sensible desde un dispositivo nuevo",
+          "severidad": "media",
+          "gravedad": 3,
+          "usuarioId": "3",
+          "adminRiesgoId": null,
+          "canal": "api",
+          "dispositivo": "simulacion-incidente-1794619510857",
+          "descripcion": "Login desde un canal o dispositivo nuevo (api / simulacion-incidente-1794619510857) seguido de una operación sensible (historial.ver) a los 0 minutos",
+          "accionTomada": "Operación detenida hasta que el titular vuelva a ingresar su contraseña (POST /auth/verificacion-adicional)",
+          "evidencia": {
+            "loginSecuencia": "474",
+            "operacion": "historial.ver"
+          },
+          "estado": "cerrada",
+          "creadaEn": "2026-11-14T01:25:17.006Z",
+          "revisadaEn": "2026-11-14T01:25:17.740Z",
+          "revisadaPor": "auditor:2",
+          "notaRevision": "Incidente documentado; sin inferir intencion del actor."
+        }
+      ]
+    },
+    {
+      "nombre": "12. UPDATE y DELETE sobre UserLogs son rechazados",
+      "esperado": "dos errores del trigger de inmutabilidad",
+      "estado": 200,
+      "datos": {
+        "update": "La tabla UserLogs es de solo anexado (auditoría y no repudio): no admite UPDATE ni DELETE",
+        "delete": "La tabla UserLogs es de solo anexado (auditoría y no repudio): no admite UPDATE ni DELETE"
+      }
+    }
+  ],
+  "alertas": [
+    {
+      "id": "19",
+      "codigo": "A2",
+      "nombre": "Consulta masiva de perfiles",
+      "severidad": "alta",
+      "gravedad": 2,
+      "usuarioId": "3",
+      "adminRiesgoId": null,
+      "canal": "api",
+      "dispositivo": "simulacion-incidente-1794619510857",
+      "descripcion": "Operador financiero consultó 11 titulares distintos en 1 minuto (máximo 10)",
+      "accionTomada": "Contención automática: sesiones revocadas y cuenta bloqueada; el Auditor debe revisar y cerrar la alerta",
+      "evidencia": {
+        "titulares": 11,
+        "ventanaMinutos": 1
+      },
+      "estado": "cerrada",
+      "creadaEn": "2026-11-14T01:25:17.419Z",
+      "revisadaEn": "2026-11-14T01:25:17.704Z",
+      "revisadaPor": "auditor:2",
+      "notaRevision": "Incidente documentado; sin inferir intencion del actor."
+    },
+    {
+      "id": "18",
+      "codigo": "A4",
+      "nombre": "Accesos denegados repetidos",
+      "severidad": "media",
+      "gravedad": 3,
+      "usuarioId": "3",
+      "adminRiesgoId": null,
+      "canal": "api",
+      "dispositivo": "simulacion-incidente-1794619510857",
+      "descripcion": "5 accesos denegados (403) del mismo actor en 10 minutos (umbral 5)",
+      "accionTomada": "Alerta al Auditor para revisar si el actor intenta acceder a datos o funciones que su rol no permite",
+      "evidencia": {
+        "denegados": 5,
+        "ventanaMinutos": 10
+      },
+      "estado": "cerrada",
+      "creadaEn": "2026-11-14T01:25:17.251Z",
+      "revisadaEn": "2026-11-14T01:25:17.723Z",
+      "revisadaPor": "auditor:2",
+      "notaRevision": "Incidente documentado; sin inferir intencion del actor."
+    },
+    {
+      "id": "17",
+      "codigo": "A3",
+      "nombre": "Operación sensible desde un dispositivo nuevo",
+      "severidad": "media",
+      "gravedad": 3,
+      "usuarioId": "3",
+      "adminRiesgoId": null,
+      "canal": "api",
+      "dispositivo": "simulacion-incidente-1794619510857",
+      "descripcion": "Login desde un canal o dispositivo nuevo (api / simulacion-incidente-1794619510857) seguido de una operación sensible (historial.ver) a los 0 minutos",
+      "accionTomada": "Operación detenida hasta que el titular vuelva a ingresar su contraseña (POST /auth/verificacion-adicional)",
+      "evidencia": {
+        "loginSecuencia": "474",
+        "operacion": "historial.ver"
+      },
+      "estado": "cerrada",
+      "creadaEn": "2026-11-14T01:25:17.006Z",
+      "revisadaEn": "2026-11-14T01:25:17.740Z",
+      "revisadaPor": "auditor:2",
+      "notaRevision": "Incidente documentado; sin inferir intencion del actor."
+    }
+  ],
+  "baseDatos": {
+    "update": "La tabla UserLogs es de solo anexado (auditoría y no repudio): no admite UPDATE ni DELETE",
+    "delete": "La tabla UserLogs es de solo anexado (auditoría y no repudio): no admite UPDATE ni DELETE"
+  },
+  "lineaTiempo": {
+    "estado": 200,
+    "totalEventos": 36,
+    "eventos": [
+      {
+        "id": "48a08765-0885-4a17-bf5e-adfb5386c8e8",
+        "secuencia": "473",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:11.282Z",
+        "accion": "auth.login",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "pc-oficina-operador",
+        "recurso": null,
+        "detalle": {}
+      },
+      {
+        "id": "d4d80528-a11f-48fd-a607-624d7a7ad491",
+        "secuencia": "474",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:11.479Z",
+        "accion": "auth.login",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": null,
+        "detalle": {}
+      },
+      {
+        "id": "a74a17f9-04eb-4e79-9174-2686a79a59a5",
+        "secuencia": "500",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.011Z",
+        "accion": "alerta.A3",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "alerta:17",
+        "detalle": {
+          "regla": "Operación sensible desde un dispositivo nuevo"
+        }
+      },
+      {
+        "id": "8c16bb75-9dca-4964-a467-4148f2d04eba",
+        "secuencia": "501",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.014Z",
+        "accion": "acceso_denegado",
+        "resultado": "denegado",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "GET /transacciones",
+        "detalle": {
+          "motivo": "verificacion_adicional",
+          "accionRequerida": "historial.ver"
+        }
+      },
+      {
+        "id": "25fe07aa-b309-45b5-8b6b-acf5921a3dd2",
+        "secuencia": "502",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.204Z",
+        "accion": "auth.verificacion_adicional",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "POST /auth/verificacion-adicional",
+        "detalle": {
+          "estado": 200
+        }
+      },
+      {
+        "id": "b431955b-e921-45f4-87be-0e73f5e436f8",
+        "secuencia": "503",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.220Z",
+        "accion": "info_financiera.ver",
+        "resultado": "denegado",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "GET /informacion-financiera titular:143",
+        "detalle": {
+          "estado": 403
+        }
+      },
+      {
+        "id": "e565d9ba-6e76-46ef-9e3a-5c9ee3f38a5c",
+        "secuencia": "504",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.228Z",
+        "accion": "info_financiera.ver",
+        "resultado": "denegado",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "GET /informacion-financiera titular:143",
+        "detalle": {
+          "estado": 403
+        }
+      },
+      {
+        "id": "8791fda3-241d-4cfd-86c5-e10cea0e5714",
+        "secuencia": "505",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.237Z",
+        "accion": "info_financiera.ver",
+        "resultado": "denegado",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "GET /informacion-financiera titular:143",
+        "detalle": {
+          "estado": 403
+        }
+      },
+      {
+        "id": "d7e45aae-c333-42b9-9563-737d6c625465",
+        "secuencia": "506",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.245Z",
+        "accion": "info_financiera.ver",
+        "resultado": "denegado",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "GET /informacion-financiera titular:143",
+        "detalle": {
+          "estado": 403
+        }
+      },
+      {
+        "id": "bba37ba2-73e2-4b0b-926a-619a9fa3d258",
+        "secuencia": "507",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.253Z",
+        "accion": "alerta.A4",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "alerta:18",
+        "detalle": {
+          "regla": "Accesos denegados repetidos"
+        }
+      },
+      {
+        "id": "f3a7832b-18f0-45da-94a4-70bfa3851f1c",
+        "secuencia": "508",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.260Z",
+        "accion": "info_financiera.ver",
+        "resultado": "denegado",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "GET /informacion-financiera titular:143",
+        "detalle": {
+          "estado": 403
+        }
+      },
+      {
+        "id": "dd1fd0bd-0a69-4c8a-8144-4a6617138264",
+        "secuencia": "509",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.269Z",
+        "accion": "acceso.por_necesidad",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "historial.ver",
+        "detalle": {
+          "motivo": "Simulacion de incidente autorizada"
+        }
+      },
+      {
+        "id": "c657cff8-3eb7-48f9-99ad-4e81648c7bef",
+        "secuencia": "510",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.272Z",
+        "accion": "historial.ver",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "GET /transacciones titular:143",
+        "detalle": {
+          "estado": 200
+        }
+      },
+      {
+        "id": "44286569-19ce-48e8-924e-9bde1424ec87",
+        "secuencia": "511",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.279Z",
+        "accion": "acceso.por_necesidad",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "historial.ver",
+        "detalle": {
+          "motivo": "Simulacion de incidente autorizada"
+        }
+      },
+      {
+        "id": "ca58fc62-8c3b-4938-827a-82a598d5fc03",
+        "secuencia": "512",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.287Z",
+        "accion": "historial.ver",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "GET /transacciones titular:144",
+        "detalle": {
+          "estado": 200
+        }
+      },
+      {
+        "id": "5222595e-01f9-4ad9-a065-6b52f8abe37f",
+        "secuencia": "513",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.298Z",
+        "accion": "acceso.por_necesidad",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "historial.ver",
+        "detalle": {
+          "motivo": "Simulacion de incidente autorizada"
+        }
+      },
+      {
+        "id": "e8d45aee-3ccb-43c6-af28-91fa8f01e9c0",
+        "secuencia": "514",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.303Z",
+        "accion": "historial.ver",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "GET /transacciones titular:145",
+        "detalle": {
+          "estado": 200
+        }
+      },
+      {
+        "id": "f35fc324-f7d6-4dc7-bbc6-1ff7e10cbfa1",
+        "secuencia": "515",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.315Z",
+        "accion": "acceso.por_necesidad",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "historial.ver",
+        "detalle": {
+          "motivo": "Simulacion de incidente autorizada"
+        }
+      },
+      {
+        "id": "ddd9948e-0c63-463c-adeb-bed9d27a4244",
+        "secuencia": "516",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.320Z",
+        "accion": "historial.ver",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "GET /transacciones titular:146",
+        "detalle": {
+          "estado": 200
+        }
+      },
+      {
+        "id": "5e90ad42-e9d6-40ee-bb1c-36b275479328",
+        "secuencia": "517",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.332Z",
+        "accion": "acceso.por_necesidad",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "historial.ver",
+        "detalle": {
+          "motivo": "Simulacion de incidente autorizada"
+        }
+      },
+      {
+        "id": "8dd5a474-5372-475d-b383-3f6af6f5c027",
+        "secuencia": "518",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.337Z",
+        "accion": "historial.ver",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "GET /transacciones titular:147",
+        "detalle": {
+          "estado": 200
+        }
+      },
+      {
+        "id": "3b334799-9cc8-4cae-b4f3-f5ed935486ad",
+        "secuencia": "519",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.352Z",
+        "accion": "acceso.por_necesidad",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "historial.ver",
+        "detalle": {
+          "motivo": "Simulacion de incidente autorizada"
+        }
+      },
+      {
+        "id": "32814a71-1bf0-482a-abbb-c057f450aad5",
+        "secuencia": "520",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.357Z",
+        "accion": "historial.ver",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "GET /transacciones titular:148",
+        "detalle": {
+          "estado": 200
+        }
+      },
+      {
+        "id": "16f63e21-2013-41e5-8501-a903a13de494",
+        "secuencia": "521",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.365Z",
+        "accion": "acceso.por_necesidad",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "historial.ver",
+        "detalle": {
+          "motivo": "Simulacion de incidente autorizada"
+        }
+      },
+      {
+        "id": "8a291437-2766-4089-9110-66329d1db6f4",
+        "secuencia": "522",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.369Z",
+        "accion": "historial.ver",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "GET /transacciones titular:149",
+        "detalle": {
+          "estado": 200
+        }
+      },
+      {
+        "id": "1afdabc5-e37d-4ef7-9591-ee35c47e22e0",
+        "secuencia": "523",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.377Z",
+        "accion": "acceso.por_necesidad",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "historial.ver",
+        "detalle": {
+          "motivo": "Simulacion de incidente autorizada"
+        }
+      },
+      {
+        "id": "6d0a7992-46f8-4a82-a6bc-f757b8111de4",
+        "secuencia": "524",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.381Z",
+        "accion": "historial.ver",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "GET /transacciones titular:150",
+        "detalle": {
+          "estado": 200
+        }
+      },
+      {
+        "id": "bc1c3c22-0b8f-4efd-be0d-92123eb369ba",
+        "secuencia": "525",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.389Z",
+        "accion": "acceso.por_necesidad",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "historial.ver",
+        "detalle": {
+          "motivo": "Simulacion de incidente autorizada"
+        }
+      },
+      {
+        "id": "a10d578b-b7bc-4457-a071-10b786e53ac3",
+        "secuencia": "526",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.393Z",
+        "accion": "historial.ver",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "GET /transacciones titular:151",
+        "detalle": {
+          "estado": 200
+        }
+      },
+      {
+        "id": "8d6f9872-cd17-4626-a3d8-a36e40fabb68",
+        "secuencia": "527",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.400Z",
+        "accion": "acceso.por_necesidad",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "historial.ver",
+        "detalle": {
+          "motivo": "Simulacion de incidente autorizada"
+        }
+      },
+      {
+        "id": "46da5810-5ba4-4492-a6cf-d42c36456664",
+        "secuencia": "528",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.404Z",
+        "accion": "historial.ver",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "GET /transacciones titular:152",
+        "detalle": {
+          "estado": 200
+        }
+      },
+      {
+        "id": "dd6d8f22-eda3-44a0-922b-1e70fd368590",
+        "secuencia": "529",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.411Z",
+        "accion": "acceso.por_necesidad",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "historial.ver",
+        "detalle": {
+          "motivo": "Simulacion de incidente autorizada"
+        }
+      },
+      {
+        "id": "64813897-ed6b-491b-9bd5-ba917f2753a6",
+        "secuencia": "530",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.415Z",
+        "accion": "historial.ver",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "GET /transacciones titular:153",
+        "detalle": {
+          "estado": 200
+        }
+      },
+      {
+        "id": "18bbb9fa-9879-4b78-aebc-a2e84a2d488b",
+        "secuencia": "531",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.421Z",
+        "accion": "alerta.A2",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "alerta:19",
+        "detalle": {
+          "regla": "Consulta masiva de perfiles"
+        }
+      },
+      {
+        "id": "619f28d0-a19d-498d-8e9e-0dc77e5fb71d",
+        "secuencia": "532",
+        "usuarioId": null,
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.427Z",
+        "accion": "incidente.contencion",
+        "resultado": "exito",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": "usuario:3",
+        "detalle": {
+          "motivo": "A2: consulta masiva, alerta #19"
+        }
+      },
+      {
+        "id": "db511869-d40c-4df4-b60f-433f50beb6d9",
+        "secuencia": "535",
+        "usuarioId": "3",
+        "adminRiesgoId": null,
+        "fechaAccion": "2026-11-14T01:25:17.649Z",
+        "accion": "auth.login",
+        "resultado": "denegado",
+        "canal": "api",
+        "dispositivo": "simulacion-incidente-1794619510857",
+        "recurso": null,
+        "detalle": {
+          "motivo": "cuenta_bloqueada"
+        }
+      }
+    ],
+    "filtros": {
+      "usuarioId": 3,
+      "adminRiesgoId": 1,
+      "desde": "2026-11-14T01:25:09.858Z",
+      "hasta": "2026-11-14T01:25:18.670Z"
+    },
+    "cadenaDeCustodia": {
+      "algoritmo": "SHA-256",
+      "alcance": "JSON.stringify(eventos)",
+      "huella": "833c784dba1e1617d73f66d93bec032256a7569bd548a8ad476012e58a7419cc",
+      "firma": "CAHZrxYSB+EUZVgF8tXE4MY0QpNgbAMe3XRkcYoNuLP0SrkCTX5WYik11gwmA/h/GK0blrlBphw2hZe/qbDtsYY4sOVKD4P6nL2K0bsHiJe5GLy3LeQFfp6cHhuP9ggkV4KC2Ksv1jajBpP2fjP6snVlPwGSKNBz631EX9wF2aTyqTCaj1LvSROEx/34eXS1O8ggNPikbGU356BLGwqsHCkjP/aRrd3dJeBerIszfj/xTOocFVQXE1XrKvpo7WLiVxhQqfousX98FcLrmnR/mw24Q6PwGGz3RbENg2Jf0EXIvaq95Xux9FioEuu3qhlKrt5hO2kDGAIXeNekO70GrA==",
+      "firmaAlgoritmo": "RSA-SHA256 sobre \"huella|generadoEn|exportadoPor\"",
+      "bitacoraIntegra": true,
+      "registrosVerificados": 536
+    },
+    "huellaCalculada": "833c784dba1e1617d73f66d93bec032256a7569bd548a8ad476012e58a7419cc",
+    "huellaCoincide": true
+  },
+  "revisiones": [
+    {
+      "id": "19",
+      "codigo": "A2",
+      "nombre": "Consulta masiva de perfiles",
+      "severidad": "alta",
+      "gravedad": 2,
+      "usuarioId": "3",
+      "adminRiesgoId": null,
+      "canal": "api",
+      "dispositivo": "simulacion-incidente-1794619510857",
+      "descripcion": "Operador financiero consultó 11 titulares distintos en 1 minuto (máximo 10)",
+      "accionTomada": "Contención automática: sesiones revocadas y cuenta bloqueada; el Auditor debe revisar y cerrar la alerta",
+      "evidencia": {
+        "titulares": 11,
+        "ventanaMinutos": 1
+      },
+      "estado": "cerrada",
+      "creadaEn": "2026-11-14T01:25:17.419Z",
+      "revisadaEn": "2026-11-14T01:25:17.704Z",
+      "revisadaPor": "auditor:2",
+      "notaRevision": "Incidente documentado; sin inferir intencion del actor."
+    },
+    {
+      "id": "18",
+      "codigo": "A4",
+      "nombre": "Accesos denegados repetidos",
+      "severidad": "media",
+      "gravedad": 3,
+      "usuarioId": "3",
+      "adminRiesgoId": null,
+      "canal": "api",
+      "dispositivo": "simulacion-incidente-1794619510857",
+      "descripcion": "5 accesos denegados (403) del mismo actor en 10 minutos (umbral 5)",
+      "accionTomada": "Alerta al Auditor para revisar si el actor intenta acceder a datos o funciones que su rol no permite",
+      "evidencia": {
+        "denegados": 5,
+        "ventanaMinutos": 10
+      },
+      "estado": "cerrada",
+      "creadaEn": "2026-11-14T01:25:17.251Z",
+      "revisadaEn": "2026-11-14T01:25:17.723Z",
+      "revisadaPor": "auditor:2",
+      "notaRevision": "Incidente documentado; sin inferir intencion del actor."
+    },
+    {
+      "id": "17",
+      "codigo": "A3",
+      "nombre": "Operación sensible desde un dispositivo nuevo",
+      "severidad": "media",
+      "gravedad": 3,
+      "usuarioId": "3",
+      "adminRiesgoId": null,
+      "canal": "api",
+      "dispositivo": "simulacion-incidente-1794619510857",
+      "descripcion": "Login desde un canal o dispositivo nuevo (api / simulacion-incidente-1794619510857) seguido de una operación sensible (historial.ver) a los 0 minutos",
+      "accionTomada": "Operación detenida hasta que el titular vuelva a ingresar su contraseña (POST /auth/verificacion-adicional)",
+      "evidencia": {
+        "loginSecuencia": "474",
+        "operacion": "historial.ver"
+      },
+      "estado": "cerrada",
+      "creadaEn": "2026-11-14T01:25:17.006Z",
+      "revisadaEn": "2026-11-14T01:25:17.740Z",
+      "revisadaPor": "auditor:2",
+      "notaRevision": "Incidente documentado; sin inferir intencion del actor."
+    }
+  ],
+  "errores": [],
+  "finalizadoEn": "2026-11-14T01:25:17.762Z",
+  "estado": "completado"
+}
